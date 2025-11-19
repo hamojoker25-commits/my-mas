@@ -14,6 +14,7 @@ st.title("📊 لوحة القيادة لتحليل بيانات المبيعا�
 st.markdown("""
 هذا النظام يقوم بتحليل البيانات بناءً على المتطلبات:
 - التحليل الإحصائي، الأداء، السلاسل الزمنية، الأسعار، والمنتجات.
+- **تم تحديث الكود للسماح للمستخدم بتحديد أسماء الأعمدة يدوياً.**
 """)
 
 # ---------------------------------------------------------
@@ -39,12 +40,12 @@ def generate_data():
         cust = np.random.choice(customers)
         qty = np.random.randint(1, 20)
         price = np.random.randint(10, 2000)
-        cost = price * 0.7  # تكلفة تقديرية 70%
+        cost = price * 0.7 
         
-        # نستخدم الأسماء الإنجليزية القياسية للبيانات التجريبية
+        # استخدام أسماء أعمدة عربية افتراضية للبيانات التجريبية
         data.append([date, prod, cat, reg, cust, price, qty, cost])
         
-    df = pd.DataFrame(data, columns=['Date', 'Product', 'Category', 'Region', 'Customer', 'Price', 'Quantity', 'Cost'])
+    df = pd.DataFrame(data, columns=['التاريخ', 'المنتج', 'الفئة', 'المنطقة', 'العميل', 'السعر', 'الكمية', 'التكلفة'])
     return df
 
 # ---------------------------------------------------------
@@ -53,352 +54,366 @@ def generate_data():
 st.sidebar.header("📂 إعدادات البيانات")
 upload_file = st.sidebar.file_uploader("ارفع ملف البيانات (CSV/Excel)", type=["csv", "xlsx"])
 
+df = None
 if upload_file:
-    # محاولة قراءة الملف، مع دعم التشفير العربي لملفات CSV
     try:
         if upload_file.name.endswith('.csv'):
+            # محاولة قراءة الملف بترميز UTF-8
             df = pd.read_csv(upload_file, encoding='utf-8')
         else:
             df = pd.read_excel(upload_file)
     except Exception as e:
-        st.error(f"حدث خطأ أثناء قراءة الملف. يرجى التأكد من التنسيق والترميز (عادةً UTF-8). الخطأ: {e}")
+        st.error(f"حدث خطأ أثناء قراءة الملف. يرجى التأكد من التنسيق. الخطأ: {e}")
         st.stop()
 else:
-    st.sidebar.info("تم استخدام بيانات تجريبية لأنك لم ترفع ملفاً.")
+    st.sidebar.info("تم استخدام بيانات تجريبية (بأعمدة عربية) لأنك لم ترفع ملفاً.")
     df = generate_data()
 
 # ---------------------------------------------------------
-# 4. معالجة البيانات وتوحيد أسماء الأعمدة (NEW FLEXIBILITY)
+# 4. معالجة البيانات وتحديد الأعمدة يدوياً (Manual Column Mapping)
 # ---------------------------------------------------------
 
-# ✅ آلية توحيد أسماء الأعمدة لدعم العربية والإنجليزية
-# يتم توحيد جميع الأعمدة إلى اللغة الإنجليزية داخلياً لتشغيل الكود بسلاسة
-COLUMN_MAPPING = {
-    'Date': ['Date', 'التاريخ', 'تاريخ', 'date'],
-    'Product': ['Product', 'المنتج', 'منتج', 'product', 'الصنف', 'صنف'],
-    'Category': ['Category', 'الفئة', 'فئة', 'category', 'التصنيف', 'تصنيف'],
-    'Region': ['Region', 'المنطقة', 'منطقة', 'region'],
-    'Price': ['Price', 'السعر', 'سعر', 'price'],
-    'Quantity': ['Quantity', 'الكمية', 'كمية', 'quantity', 'Qty', 'qty'],
-    'Cost': ['Cost', 'التكلفة', 'تكلفة', 'cost'],
-    'Customer': ['Customer', 'العميل', 'عميل', 'customer']
-}
+if df is not None:
+    st.subheader("🛠️ خطوة 1: تحديد الأعمدة المطلوبة من ملفك")
+    st.info("يرجى إدخال اسم العمود في ملفك (كما هو بالضبط) الذي يمثل القيمة المطلوبة. الأعمدة الموجودة هي: " + ", ".join(df.columns))
 
-# عكس الخريطة للبحث السريع وتوحيد الأعمدة
-REVERSE_MAPPING = {}
-for internal_name, possible_names in COLUMN_MAPPING.items():
-    for name in possible_names:
-        REVERSE_MAPPING[name.strip().lower()] = internal_name
+    required_fields = {
+        'Date': 'عمود التاريخ (مثال: التاريخ)',
+        'Product': 'عمود اسم المنتج (مثال: المنتج أو ItemName)',
+        'Category': 'عمود فئة المنتج (مثال: الفئة أو Category)',
+        'Region': 'عمود المنطقة/الفرع (مثال: المنطقة أو Branch)',
+        'Price': 'عمود سعر الوحدة (مثال: السعر أو UnitPrice)',
+        'Quantity': 'عمود الكمية المباعة (مثال: الكمية أو Qty)'
+    }
+    
+    # استخدام حالة Streamlit لتخزين أسماء الأعمدة المختارة
+    if 'column_mapping' not in st.session_state:
+        st.session_state.column_mapping = {}
 
-# تطبيق التوحيد
-current_columns = {col.strip().lower(): col for col in df.columns}
-new_columns = {}
-missing_required = []
-
-for internal_name in ['Date', 'Product', 'Category', 'Region', 'Price', 'Quantity']:
-    found = False
-    for col_lower, col_original in current_columns.items():
-        if col_lower in REVERSE_MAPPING and REVERSE_MAPPING[col_lower] == internal_name:
-            new_columns[col_original] = internal_name
-            found = True
-            break
-    if not found:
-        missing_required.append(internal_name)
+    col_mapping_cols = st.columns(3)
+    
+    # عرض مربعات الإدخال لتحديد الأعمدة المطلوبة
+    for i, (internal_name, prompt) in enumerate(required_fields.items()):
+        col = col_mapping_cols[i % 3]
+        default_value = next((col for col in df.columns if col == prompt.split(' ')[-1].replace(')', '')), '')
         
-# إضافة الأعمدة الاختيارية (Cost, Customer) إذا وجدت
-for optional_name in ['Cost', 'Customer']:
-    for col_lower, col_original in current_columns.items():
-        if col_lower in REVERSE_MAPPING and REVERSE_MAPPING[col_lower] == optional_name:
-            new_columns[col_original] = optional_name
-            break
+        st.session_state.column_mapping[internal_name] = col.text_input(
+            prompt, 
+            value=default_value if not st.session_state.column_mapping.get(internal_name) else st.session_state.column_mapping[internal_name],
+            key=f"map_{internal_name}"
+        )
 
-# تطبيق إعادة التسمية
-df.rename(columns=new_columns, inplace=True)
-
-# التأكد من الأعمدة المطلوبة
-if missing_required:
-    st.error(f"البيانات تفتقد للأعمدة المطلوبة التالية (أو ما يقابلها بالعربية): **{', '.join(missing_required)}**.")
-    st.info("يرجى التأكد من وجود أعمدة التاريخ، المنتج، الفئة، المنطقة، السعر، والكمية.")
-    st.stop()
-    
-# تحويل التاريخ
-df['Date'] = pd.to_datetime(df['Date'])
-
-# حساب الأعمدة المشتقة
-if 'Revenue' not in df.columns:
-    df['Revenue'] = df['Price'] * df['Quantity']
-
-if 'Cost' not in df.columns:
-    # افتراض التكلفة 0 إذا لم توجد لحساب الربح
-    df['Cost'] = 0 
-
-df['Profit'] = df['Revenue'] - (df['Cost'] * df['Quantity'])
-df['Month'] = df['Date'].dt.to_period('M').astype(str)
-df['Day_Name'] = df['Date'].dt.day_name()
-
-# فلاتر جانبية (Sidebar Filters)
-st.sidebar.subheader("🔍 الفلاتر")
-selected_region = st.sidebar.multiselect("اختر المنطقة", df['Region'].unique(), default=df['Region'].unique())
-selected_category = st.sidebar.multiselect("اختر الفئة", df['Category'].unique(), default=df['Category'].unique())
-
-# تطبيق الفلاتر
-filtered_df = df[(df['Region'].isin(selected_region)) & (df['Category'].isin(selected_category))]
-
-if filtered_df.empty:
-    st.warning("لا توجد بيانات بناءً على الفلاتر المختارة.")
-    st.stop()
-
-# ---------------------------------------------------------
-# 5. الأقسام والتبويبات (Tabs)
-# ---------------------------------------------------------
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📈 1. التحليل الإحصائي", 
-    "🏆 2. تحليل الأداء", 
-    "⏳ 3. تحليل الزمن", 
-    "💰 4. تحليل الأسعار", 
-    "📦 5. تحليل المنتجات"
-])
-
-# =========================================================
-# TAB 1: التحليل الإحصائي الأساسي
-# =========================================================
-with tab1:
-    st.header("🔹 التحليل الإحصائي الأساسي")
-    
-    # الحسابات
-    total_revenue = filtered_df['Revenue'].sum()
-    total_qty = filtered_df['Quantity'].sum()
-    avg_price = filtered_df['Price'].mean()
-    max_price = filtered_df['Price'].max()
-    min_price = filtered_df['Price'].min()
-    
-    # التجميعات
-    sales_by_region = filtered_df.groupby('Region')['Revenue'].sum()
-    best_region = sales_by_region.idxmax()
-    worst_region = sales_by_region.idxmin()
-    
-    sales_by_day = filtered_df.groupby('Date')['Revenue'].sum()
-    avg_daily_revenue = sales_by_day.mean()
-    best_day = sales_by_day.idxmax().strftime('%Y-%m-%d')
-    worst_day = sales_by_day.idxmin().strftime('%Y-%m-%d')
-
-    # عرض المقاييس (Metrics)
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("عدد الصفوف (المعاملات)", filtered_df.shape[0])
-    col1.metric("عدد المنتجات الفريدة", filtered_df['Product'].nunique())
-    col1.metric("عدد الفئات", filtered_df['Category'].nunique())
-    
-    col2.metric("إجمالي الإيرادات", f"${total_revenue:,.2f}")
-    col2.metric("مجموع الكميات", f"{total_qty:,}")
-    col2.metric("متوسط السعر", f"${avg_price:.2f}")
-    
-    col3.metric("أعلى سعر منتج", f"${max_price:.2f}")
-    col3.metric("أقل سعر منتج", f"${min_price:.2f}")
-    col3.metric("متوسط الإيراد اليومي", f"${avg_daily_revenue:,.2f}")
-
-    col4.metric("أكثر منطقة مبيعًا", best_region)
-    col4.metric("أقل منطقة مبيعًا", worst_region)
-    col4.metric("أفضل يوم مبيعات", best_day)
-    
-    st.info(f"📅 **أقل يوم مبيعات:** {worst_day}")
-
-# =========================================================
-# TAB 2: تحليل الأداء Performance
-# =========================================================
-with tab2:
-    st.header("🔹 تحليل الأداء (Performance Analysis)")
-    
-    col_a, col_b = st.columns(2)
-    
-    # أفضل 10 منتجات وأسوأ 10 منتجات
-    product_perf = filtered_df.groupby('Product')['Revenue'].sum().sort_values(ascending=False)
-    
-    with col_a:
-        st.subheader("أفضل 10 منتجات (إيرادات)")
-        fig_top_prod = px.bar(product_perf.head(10), orientation='h', title="Top 10 Products", color_discrete_sequence=['green'])
-        st.plotly_chart(fig_top_prod, use_container_width=True)
-        
-    with col_b:
-        st.subheader("أسوأ 10 منتجات (إيرادات)")
-        fig_low_prod = px.bar(product_perf.tail(10), orientation='h', title="Bottom 10 Products", color_discrete_sequence=['red'])
-        st.plotly_chart(fig_low_prod, use_container_width=True)
-
-    col_c, col_d = st.columns(2)
-    
-    # أفضل 5 مناطق
-    region_perf = filtered_df.groupby('Region')['Revenue'].sum().nlargest(5)
-    with col_c:
-        st.subheader("أفضل 5 مناطق")
-        fig_region = px.pie(values=region_perf.values, names=region_perf.index, hole=0.4)
-        st.plotly_chart(fig_region, use_container_width=True)
-
-    # أعلى 5 عملاء (إذا وجد العمود)
-    if 'Customer' in filtered_df.columns:
-        cust_perf = filtered_df.groupby('Customer')['Revenue'].sum().nlargest(5)
-        with col_d:
-            st.subheader("أعلى 5 عملاء")
-            fig_cust = px.bar(cust_perf, title="Top 5 Customers")
-            st.plotly_chart(fig_cust, use_container_width=True)
-    
-    st.markdown("---")
-    
-    # نسبة المساهمة والكمية مقابل الإيراد
-    col_e, col_f = st.columns(2)
-    
-    with col_e:
-        st.subheader("نسبة مساهمة الفئات (Category Contribution)")
-        cat_perf = filtered_df.groupby('Category')['Revenue'].sum()
-        fig_cat = px.pie(values=cat_perf.values, names=cat_perf.index, title="Category Share")
-        st.plotly_chart(fig_cat, use_container_width=True)
-        
-    with col_f:
-        st.subheader("تحليل الكمية مقابل الإيراد لكل منتج")
-        qty_rev = filtered_df.groupby('Product')[['Quantity', 'Revenue']].sum().reset_index()
-        fig_scatter = px.scatter(qty_rev, x='Quantity', y='Revenue', hover_name='Product', size='Revenue', color='Revenue')
-        st.plotly_chart(fig_scatter, use_container_width=True)
-
-# =========================================================
-# TAB 3: تحليل الزمن (Time Series)
-# =========================================================
-with tab3:
-    st.header("🔹 تحليل الزمن (Time Series Analysis)")
-    
-    # تجميع البيانات
-    daily_sales = filtered_df.groupby('Date')['Revenue'].sum()
-    weekly_sales = filtered_df.set_index('Date').resample('W')['Revenue'].sum()
-    monthly_sales = filtered_df.set_index('Date').resample('M')['Revenue'].sum()
-    
-    # اختيار نوع العرض
-    time_frame = st.radio("اختر الفترة الزمنية:", ["يومي", "أسبوعي", "شهري"], horizontal=True)
-    
-    if time_frame == "يومي":
-        data_ts = daily_sales
-        title_ts = "المبيعات اليومية"
-    elif time_frame == "أسبوعي":
-        data_ts = weekly_sales
-        title_ts = "المبيعات الأسبوعية"
-    else:
-        data_ts = monthly_sales
-        title_ts = "المبيعات الشهرية"
-    
-    # رسم الخط الزمني
-    fig_ts = px.line(data_ts, title=f"{title_ts} واتجاه المبيعات (Trend)")
-    # إضافة Trendline (Moving Average)
-    data_ts_df = data_ts.to_frame(name='Revenue')
-    data_ts_df['MA'] = data_ts_df['Revenue'].rolling(window=3).mean()
-    fig_ts.add_trace(go.Scatter(x=data_ts_df.index, y=data_ts_df['MA'], mode='lines', name='Trend (Moving Avg)', line=dict(dash='dash', color='orange')))
-    st.plotly_chart(fig_ts, use_container_width=True)
-    
-    # معدل النمو
-    st.subheader("معدل النمو (Growth Rate)")
-    data_ts_df['Growth Rate %'] = data_ts_df['Revenue'].pct_change() * 100
-    st.bar_chart(data_ts_df['Growth Rate %'])
-    
-    # التنبؤ البسيط (Forecast - Simple Linear Extrapolation visually)
-    st.markdown("**ملاحظة:** خط الـ Trend أعلاه يمثل الاتجاه العام. للتنبؤ المتقدم يفضل استخدام خوارزميات ML.")
-
-# =========================================================
-# TAB 4: تحليل الأسعار
-# =========================================================
-with tab4:
-    st.header("🔹 تحليل الأسعار (Price Analysis)")
-    
-    # متوسط سعر كل منتج
-    avg_price_prod = filtered_df.groupby('Product')['Price'].mean().sort_values()
-    global_avg = filtered_df['Price'].mean()
-    
-    col_p1, col_p2 = st.columns(2)
-    
-    with col_p1:
-        st.subheader("توزيع أسعار المنتجات")
-        fig_hist = px.histogram(filtered_df, x='Price', nbins=30, title="تكرار الأسعار")
-        fig_hist.add_vline(x=global_avg, line_dash="dash", line_color="red", annotation_text="Avg Price")
-        st.plotly_chart(fig_hist, use_container_width=True)
-        
-    with col_p2:
-        st.subheader("السعر مقابل الكمية (المرونة)")
-        fig_price_qty = px.scatter(filtered_df, x='Price', y='Quantity', color='Category', title="هل السعر يؤثر على الكمية؟")
-        st.plotly_chart(fig_price_qty, use_container_width=True)
-    
-    # منتجات أعلى وأقل من المتوسط
-    st.markdown("---")
-    col_list1, col_list2 = st.columns(2)
-    
-    with col_list1:
-        st.write(f"🔼 **منتجات سعرها أعلى من المتوسط العام ({global_avg:.1f}):**")
-        above_avg = avg_price_prod[avg_price_prod > global_avg]
-        st.dataframe(above_avg, height=200)
-        
-    with col_list2:
-        st.write(f"🔽 **منتجات سعرها أقل من المتوسط العام:**")
-        below_avg = avg_price_prod[avg_price_prod < global_avg]
-        st.dataframe(below_avg, height=200)
-
-# =========================================================
-# TAB 5: تحليل المنتجات والربحية
-# =========================================================
-with tab5:
-    st.header("🔹 تحليل المنتجات والربحية")
-    
-    # تجميع البيانات للمنتجات
-    prod_analysis = filtered_df.groupby('Product').agg({
-        'Quantity': 'sum',
-        'Revenue': 'sum',
-        'Profit': 'sum',
-        'Price': 'mean'
-    }).reset_index()
-    
-    # حساب هامش الربح
-    prod_analysis['Profit Margin %'] = (prod_analysis['Profit'] / prod_analysis['Revenue']) * 100
-    
-    # الأكثر والأقل بيعًا (كمية)
-    most_sold = prod_analysis.loc[prod_analysis['Quantity'].idxmax()]
-    least_sold = prod_analysis.loc[prod_analysis['Quantity'].idxmin()]
-    
-    c1, c2, c3 = st.columns(3)
-    c1.metric("المنتج الأكثر بيعًا (كمية)", most_sold['Product'], f"{most_sold['Quantity']} units")
-    c2.metric("المنتج الأقل بيعًا (كمية)", least_sold['Product'], f"{least_sold['Quantity']} units")
-    c3.metric("متوسط هامش الربح", f"{prod_analysis['Profit Margin %'].mean():.2f}%")
-    
-    st.markdown("---")
-    
-    # Scatter للربح
-    st.subheader("أرباح كل منتج وهامش الربح")
-    fig_profit = px.scatter(prod_analysis, x='Revenue', y='Profit', size='Profit Margin %', color='Product', 
-                            title="الإيراد vs الربح (حجم النقطة = هامش الربح)")
-    st.plotly_chart(fig_profit, use_container_width=True)
-    
-    # تصنيف ABC Analysis
-    # A: تساهم بـ 80% من الإيراد
-    # B: تساهم بالـ 15% التالية
-    # C: الباقي 5%
-    st.subheader("تصنيف المنتجات حسب الربحية (ABC Analysis)")
-    
-    abc_df = prod_analysis.sort_values('Revenue', ascending=False)
-    abc_df['Cumulative Revenue'] = abc_df['Revenue'].cumsum()
-    abc_df['Revenue Share'] = abc_df['Cumulative Revenue'] / abc_df['Revenue'].sum()
-    
-    def classify_abc(percentage):
-        if percentage <= 0.80:
-            return 'A'
-        elif percentage <= 0.95:
-            return 'B'
-        else:
-            return 'C'
+    # التحقق من إدخال جميع الأعمدة المطلوبة
+    is_ready = True
+    for internal_name in required_fields.keys():
+        if not st.session_state.column_mapping.get(internal_name) or st.session_state.column_mapping[internal_name] not in df.columns:
+            is_ready = False
             
-    abc_df['Class'] = abc_df['Revenue Share'].apply(classify_abc)
-    
-    col_abc1, col_abc2 = st.columns([2, 1])
-    
-    with col_abc1:
-        st.dataframe(abc_df[['Product', 'Revenue', 'Profit', 'Class']].style.applymap(
-            lambda v: 'color: green; font-weight: bold;' if v == 'A' else ('color: orange;' if v == 'B' else 'color: red;'), subset=['Class']
-        ))
+    if not is_ready:
+        st.warning("يرجى التأكد من إدخال جميع أسماء الأعمدة المطلوبة بشكل صحيح (حساسة لحالة الأحرف).")
+        st.stop()
         
-    with col_abc2:
-        fig_abc = px.pie(abc_df, names='Class', values='Revenue', title="توزيع الإيرادات حسب التصنيف", 
-                         color='Class', color_discrete_map={'A':'green', 'B':'orange', 'C':'red'})
-        st.plotly_chart(fig_abc, use_container_width=True)
+    # إعادة تسمية الأعمدة الداخلية باستخدام الأسماء القياسية (Date, Product, ...)
+    df.rename(columns={v: k for k, v in st.session_state.column_mapping.items()}, inplace=True)
+    
+    # تحديد الأعمدة الاختيارية (Cost, Customer)
+    st.markdown("---")
+    st.subheader("🛠️ خطوة 2: تحديد الأعمدة الاختيارية")
+    
+    col_opt1, col_opt2 = st.columns(2)
+    
+    cost_col = col_opt1.selectbox("عمود التكلفة (اختياري - مطلوب لحساب الربح)", ['(لا يوجد)'] + list(df.columns.drop(required_fields.keys(), errors='ignore')))
+    customer_col = col_opt2.selectbox("عمود العميل/المشتري (اختياري)", ['(لا يوجد)'] + list(df.columns.drop(required_fields.keys(), errors='ignore')))
 
-st.markdown("---")
-st.caption("تم تطوير لوحة البيانات باستخدام Python & Streamlit ✅")
+    # تطبيق الأعمدة الاختيارية
+    if cost_col != '(لا يوجد)':
+        df.rename(columns={cost_col: 'Cost'}, inplace=True)
+    if customer_col != '(لا يوجد)':
+        df.rename(columns={customer_col: 'Customer'}, inplace=True)
+
+
+    # تحويل التاريخ
+    try:
+        df['Date'] = pd.to_datetime(df['Date'])
+    except Exception:
+        st.error("خطأ في تحويل عمود التاريخ. يرجى التأكد من أن صيغة البيانات في عمود التاريخ صحيحة.")
+        st.stop()
+        
+    # حساب الأعمدة المشتقة
+    if 'Revenue' not in df.columns:
+        df['Revenue'] = df['Price'] * df['Quantity']
+
+    if 'Cost' not in df.columns:
+        # افتراض التكلفة 0 إذا لم توجد لحساب الربح
+        df['Cost'] = 0 
+
+    df['Profit'] = df['Revenue'] - (df['Cost'] * df['Quantity'])
+    df['Month'] = df['Date'].dt.to_period('M').astype(str)
+    df['Day_Name'] = df['Date'].dt.day_name()
+
+    # فلاتر جانبية (Sidebar Filters)
+    st.sidebar.subheader("🔍 الفلاتر")
+    selected_region = st.sidebar.multiselect("اختر المنطقة", df['Region'].unique(), default=df['Region'].unique())
+    selected_category = st.sidebar.multiselect("اختر الفئة", df['Category'].unique(), default=df['Category'].unique())
+
+    # تطبيق الفلاتر
+    filtered_df = df[(df['Region'].isin(selected_region)) & (df['Category'].isin(selected_category))]
+
+    if filtered_df.empty:
+        st.warning("لا توجد بيانات بناءً على الفلاتر المختارة.")
+        st.stop()
+        
+    # ---------------------------------------------------------
+    # 5. الأقسام والتبويبات (Tabs) - تبدأ هنا
+    # ---------------------------------------------------------
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📈 1. التحليل الإحصائي", 
+        "🏆 2. تحليل الأداء", 
+        "⏳ 3. تحليل الزمن", 
+        "💰 4. تحليل الأسعار", 
+        "📦 5. تحليل المنتجات"
+    ])
+
+    # =========================================================
+    # TAB 1: التحليل الإحصائي الأساسي
+    # =========================================================
+    with tab1:
+        st.header("🔹 التحليل الإحصائي الأساسي")
+        
+        # الحسابات
+        total_revenue = filtered_df['Revenue'].sum()
+        total_qty = filtered_df['Quantity'].sum()
+        avg_price = filtered_df['Price'].mean()
+        max_price = filtered_df['Price'].max()
+        min_price = filtered_df['Price'].min()
+        
+        # التجميعات
+        sales_by_region = filtered_df.groupby('Region')['Revenue'].sum()
+        best_region = sales_by_region.idxmax()
+        worst_region = sales_by_region.idxmin()
+        
+        sales_by_day = filtered_df.groupby('Date')['Revenue'].sum()
+        avg_daily_revenue = sales_by_day.mean()
+        best_day = sales_by_day.idxmax().strftime('%Y-%m-%d')
+        worst_day = sales_by_day.idxmin().strftime('%Y-%m-%d')
+
+        # عرض المقاييس (Metrics)
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("عدد الصفوف (المعاملات)", filtered_df.shape[0])
+        col1.metric("عدد المنتجات الفريدة", filtered_df['Product'].nunique())
+        col1.metric("عدد الفئات", filtered_df['Category'].nunique())
+        
+        col2.metric("إجمالي الإيرادات", f"${total_revenue:,.2f}")
+        col2.metric("مجموع الكميات", f"{total_qty:,}")
+        col2.metric("متوسط السعر", f"${avg_price:.2f}")
+        
+        col3.metric("أعلى سعر منتج", f"${max_price:.2f}")
+        col3.metric("أقل سعر منتج", f"${min_price:.2f}")
+        col3.metric("متوسط الإيراد اليومي", f"${avg_daily_revenue:,.2f}")
+
+        col4.metric("أكثر منطقة مبيعًا", best_region)
+        col4.metric("أقل منطقة مبيعًا", worst_region)
+        col4.metric("أفضل يوم مبيعات", best_day)
+        
+        st.info(f"📅 **أقل يوم مبيعات:** {worst_day}")
+
+    # =========================================================
+    # TAB 2: تحليل الأداء Performance
+    # =========================================================
+    with tab2:
+        st.header("🔹 تحليل الأداء (Performance Analysis)")
+        
+        col_a, col_b = st.columns(2)
+        
+        # أفضل 10 منتجات وأسوأ 10 منتجات
+        product_perf = filtered_df.groupby('Product')['Revenue'].sum().sort_values(ascending=False)
+        
+        with col_a:
+            st.subheader("أفضل 10 منتجات (إيرادات)")
+            fig_top_prod = px.bar(product_perf.head(10), orientation='h', title="Top 10 Products", color_discrete_sequence=['green'])
+            st.plotly_chart(fig_top_prod, use_container_width=True)
+            
+        with col_b:
+            st.subheader("أسوأ 10 منتجات (إيرادات)")
+            fig_low_prod = px.bar(product_perf.tail(10), orientation='h', title="Bottom 10 Products", color_discrete_sequence=['red'])
+            st.plotly_chart(fig_low_prod, use_container_width=True)
+
+        col_c, col_d = st.columns(2)
+        
+        # أفضل 5 مناطق
+        region_perf = filtered_df.groupby('Region')['Revenue'].sum().nlargest(5)
+        with col_c:
+            st.subheader("أفضل 5 مناطق")
+            fig_region = px.pie(values=region_perf.values, names=region_perf.index, hole=0.4)
+            st.plotly_chart(fig_region, use_container_width=True)
+
+        # أعلى 5 عملاء (إذا وجد العمود)
+        if 'Customer' in filtered_df.columns:
+            cust_perf = filtered_df.groupby('Customer')['Revenue'].sum().nlargest(5)
+            with col_d:
+                st.subheader("أعلى 5 عملاء")
+                fig_cust = px.bar(cust_perf, title="Top 5 Customers")
+                st.plotly_chart(fig_cust, use_container_width=True)
+        
+        st.markdown("---")
+        
+        # نسبة المساهمة والكمية مقابل الإيراد
+        col_e, col_f = st.columns(2)
+        
+        with col_e:
+            st.subheader("نسبة مساهمة الفئات (Category Contribution)")
+            cat_perf = filtered_df.groupby('Category')['Revenue'].sum()
+            fig_cat = px.pie(values=cat_perf.values, names=cat_perf.index, title="Category Share")
+            st.plotly_chart(fig_cat, use_container_width=True)
+            
+        with col_f:
+            st.subheader("تحليل الكمية مقابل الإيراد لكل منتج")
+            qty_rev = filtered_df.groupby('Product')[['Quantity', 'Revenue']].sum().reset_index()
+            fig_scatter = px.scatter(qty_rev, x='Quantity', y='Revenue', hover_name='Product', size='Revenue', color='Revenue')
+            st.plotly_chart(fig_scatter, use_container_width=True)
+
+    # =========================================================
+    # TAB 3: تحليل الزمن (Time Series)
+    # =========================================================
+    with tab3:
+        st.header("🔹 تحليل الزمن (Time Series Analysis)")
+        
+        # تجميع البيانات
+        daily_sales = filtered_df.groupby('Date')['Revenue'].sum()
+        weekly_sales = filtered_df.set_index('Date').resample('W')['Revenue'].sum()
+        monthly_sales = filtered_df.set_index('Date').resample('M')['Revenue'].sum()
+        
+        # اختيار نوع العرض
+        time_frame = st.radio("اختر الفترة الزمنية:", ["يومي", "أسبوعي", "شهري"], horizontal=True)
+        
+        if time_frame == "يومي":
+            data_ts = daily_sales
+            title_ts = "المبيعات اليومية"
+        elif time_frame == "أسبوعي":
+            data_ts = weekly_sales
+            title_ts = "المبيعات الأسبوعية"
+        else:
+            data_ts = monthly_sales
+            title_ts = "المبيعات الشهرية"
+        
+        # رسم الخط الزمني
+        fig_ts = px.line(data_ts, title=f"{title_ts} واتجاه المبيعات (Trend)")
+        # إضافة Trendline (Moving Average)
+        data_ts_df = data_ts.to_frame(name='Revenue')
+        data_ts_df['MA'] = data_ts_df['Revenue'].rolling(window=3).mean()
+        fig_ts.add_trace(go.Scatter(x=data_ts_df.index, y=data_ts_df['MA'], mode='lines', name='Trend (Moving Avg)', line=dict(dash='dash', color='orange')))
+        st.plotly_chart(fig_ts, use_container_width=True)
+        
+        # معدل النمو
+        st.subheader("معدل النمو (Growth Rate)")
+        data_ts_df['Growth Rate %'] = data_ts_df['Revenue'].pct_change() * 100
+        st.bar_chart(data_ts_df['Growth Rate %'])
+        
+        # التنبؤ البسيط (Forecast - Simple Linear Extrapolation visually)
+        st.markdown("**ملاحظة:** خط الـ Trend أعلاه يمثل الاتجاه العام. للتنبؤ المتقدم يفضل استخدام خوارزميات ML.")
+
+    # =========================================================
+    # TAB 4: تحليل الأسعار
+    # =========================================================
+    with tab4:
+        st.header("🔹 تحليل الأسعار (Price Analysis)")
+        
+        # متوسط سعر كل منتج
+        avg_price_prod = filtered_df.groupby('Product')['Price'].mean().sort_values()
+        global_avg = filtered_df['Price'].mean()
+        
+        col_p1, col_p2 = st.columns(2)
+        
+        with col_p1:
+            st.subheader("توزيع أسعار المنتجات")
+            fig_hist = px.histogram(filtered_df, x='Price', nbins=30, title="تكرار الأسعار")
+            fig_hist.add_vline(x=global_avg, line_dash="dash", line_color="red", annotation_text="Avg Price")
+            st.plotly_chart(fig_hist, use_container_width=True)
+            
+        with col_p2:
+            st.subheader("السعر مقابل الكمية (المرونة)")
+            fig_price_qty = px.scatter(filtered_df, x='Price', y='Quantity', color='Category', title="هل السعر يؤثر على الكمية؟")
+            st.plotly_chart(fig_price_qty, use_container_width=True)
+        
+        # منتجات أعلى وأقل من المتوسط
+        st.markdown("---")
+        col_list1, col_list2 = st.columns(2)
+        
+        with col_list1:
+            st.write(f"🔼 **منتجات سعرها أعلى من المتوسط العام ({global_avg:.1f}):**")
+            above_avg = avg_price_prod[avg_price_prod > global_avg]
+            st.dataframe(above_avg, height=200)
+            
+        with col_list2:
+            st.write(f"🔽 **منتجات سعرها أقل من المتوسط العام:**")
+            below_avg = avg_price_prod[avg_price_prod < global_avg]
+            st.dataframe(below_avg, height=200)
+
+    # =========================================================
+    # TAB 5: تحليل المنتجات والربحية
+    # =========================================================
+    with tab5:
+        st.header("🔹 تحليل المنتجات والربحية")
+        
+        # تجميع البيانات للمنتجات
+        prod_analysis = filtered_df.groupby('Product').agg({
+            'Quantity': 'sum',
+            'Revenue': 'sum',
+            'Profit': 'sum',
+            'Price': 'mean'
+        }).reset_index()
+        
+        # حساب هامش الربح
+        prod_analysis['Profit Margin %'] = (prod_analysis['Profit'] / prod_analysis['Revenue']) * 100
+        
+        # الأكثر والأقل بيعًا (كمية)
+        most_sold = prod_analysis.loc[prod_analysis['Quantity'].idxmax()]
+        least_sold = prod_analysis.loc[prod_analysis['Quantity'].idxmin()]
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("المنتج الأكثر بيعًا (كمية)", most_sold['Product'], f"{most_sold['Quantity']} units")
+        c2.metric("المنتج الأقل بيعًا (كمية)", least_sold['Product'], f"{least_sold['Quantity']} units")
+        c3.metric("متوسط هامش الربح", f"{prod_analysis['Profit Margin %'].mean():.2f}%")
+        
+        st.markdown("---")
+        
+        # Scatter للربح
+        st.subheader("أرباح كل منتج وهامش الربح")
+        fig_profit = px.scatter(prod_analysis, x='Revenue', y='Profit', size='Profit Margin %', color='Product', 
+                                title="الإيراد vs الربح (حجم النقطة = هامش الربح)")
+        st.plotly_chart(fig_profit, use_container_width=True)
+        
+        # تصنيف ABC Analysis
+        # A: تساهم بـ 80% من الإيراد
+        # B: تساهم بالـ 15% التالية
+        # C: الباقي 5%
+        st.subheader("تصنيف المنتجات حسب الربحية (ABC Analysis)")
+        
+        abc_df = prod_analysis.sort_values('Revenue', ascending=False)
+        abc_df['Cumulative Revenue'] = abc_df['Revenue'].cumsum()
+        abc_df['Revenue Share'] = abc_df['Cumulative Revenue'] / abc_df['Revenue'].sum()
+        
+        def classify_abc(percentage):
+            if percentage <= 0.80:
+                return 'A'
+            elif percentage <= 0.95:
+                return 'B'
+            else:
+                return 'C'
+                
+        abc_df['Class'] = abc_df['Revenue Share'].apply(classify_abc)
+        
+        col_abc1, col_abc2 = st.columns([2, 1])
+        
+        with col_abc1:
+            st.dataframe(abc_df[['Product', 'Revenue', 'Profit', 'Class']].style.applymap(
+                lambda v: 'color: green; font-weight: bold;' if v == 'A' else ('color: orange;' if v == 'B' else 'color: red;'), subset=['Class']
+            ))
+            
+        with col_abc2:
+            fig_abc = px.pie(abc_df, names='Class', values='Revenue', title="توزيع الإيرادات حسب التصنيف", 
+                             color='Class', color_discrete_map={'A':'green', 'B':'orange', 'C':'red'})
+            st.plotly_chart(fig_abc, use_container_width=True)
+
+    st.markdown("---")
+    st.caption("تم تطوير لوحة البيانات باستخدام Python & Streamlit ✅")
