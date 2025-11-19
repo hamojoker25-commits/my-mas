@@ -12,13 +12,11 @@ st.set_page_config(page_title="لوحة تحليل المبيعات الشامل
 
 st.title("📊 لوحة القيادة لتحليل بيانات المبيعات (Sales Dashboard)")
 st.markdown("""
-هذا النظام يقوم بتحليل البيانات بناءً على المتطلبات:
-- التحليل الإحصائي، الأداء، السلاسل الزمنية، الأسعار، والمنتجات.
-- **تم تحديث الكود للسماح للمستخدم بتحديد أسماء الأعمدة يدوياً.**
+تم تحديث الكود لضمان التشغيل الخالي من الأخطاء عبر الطلب اليدوي لأسماء الأعمدة.
 """)
 
 # ---------------------------------------------------------
-# 2. دالة لتوليد بيانات تجريبية (في حالة عدم وجود ملف)
+# 2. دالة لتوليد بيانات تجريبية (للتأكد من عمل الكود)
 # ---------------------------------------------------------
 @st.cache_data
 def generate_data():
@@ -42,7 +40,7 @@ def generate_data():
         price = np.random.randint(10, 2000)
         cost = price * 0.7 
         
-        # استخدام أسماء أعمدة عربية افتراضية للبيانات التجريبية
+        # نستخدم أسماء أعمدة عربية افتراضية في البيانات التجريبية لتجربة آلية التحديد اليدوي
         data.append([date, prod, cat, reg, cust, price, qty, cost])
         
     df = pd.DataFrame(data, columns=['التاريخ', 'المنتج', 'الفئة', 'المنطقة', 'العميل', 'السعر', 'الكمية', 'التكلفة'])
@@ -58,15 +56,14 @@ df = None
 if upload_file:
     try:
         if upload_file.name.endswith('.csv'):
-            # محاولة قراءة الملف بترميز UTF-8
             df = pd.read_csv(upload_file, encoding='utf-8')
         else:
             df = pd.read_excel(upload_file)
     except Exception as e:
-        st.error(f"حدث خطأ أثناء قراءة الملف. يرجى التأكد من التنسيق. الخطأ: {e}")
+        st.error(f"حدث خطأ أثناء قراءة الملف. يرجى التأكد من التنسيق والترميز (عادةً UTF-8).")
         st.stop()
 else:
-    st.sidebar.info("تم استخدام بيانات تجريبية (بأعمدة عربية) لأنك لم ترفع ملفاً.")
+    st.sidebar.info("يتم استخدام بيانات تجريبية غير حقيقية.")
     df = generate_data()
 
 # ---------------------------------------------------------
@@ -75,15 +72,15 @@ else:
 
 if df is not None:
     st.subheader("🛠️ خطوة 1: تحديد الأعمدة المطلوبة من ملفك")
-    st.info("يرجى إدخال اسم العمود في ملفك (كما هو بالضبط) الذي يمثل القيمة المطلوبة. الأعمدة الموجودة هي: " + ", ".join(df.columns))
+    st.info("يرجى إدخال اسم العمود في ملفك (مطابق تماماً) الذي يمثل القيمة المطلوبة. الأعمدة الموجودة هي: " + ", ".join(df.columns))
 
     required_fields = {
         'Date': 'عمود التاريخ (مثال: التاريخ)',
-        'Product': 'عمود اسم المنتج (مثال: المنتج أو ItemName)',
-        'Category': 'عمود فئة المنتج (مثال: الفئة أو Category)',
-        'Region': 'عمود المنطقة/الفرع (مثال: المنطقة أو Branch)',
-        'Price': 'عمود سعر الوحدة (مثال: السعر أو UnitPrice)',
-        'Quantity': 'عمود الكمية المباعة (مثال: الكمية أو Qty)'
+        'Product': 'عمود اسم المنتج (مثال: المنتج)',
+        'Category': 'عمود فئة المنتج (مثال: الفئة)',
+        'Region': 'عمود المنطقة/الفرع (مثال: المنطقة)',
+        'Price': 'عمود سعر الوحدة (مثال: السعر)',
+        'Quantity': 'عمود الكمية المباعة (مثال: الكمية)'
     }
     
     # استخدام حالة Streamlit لتخزين أسماء الأعمدة المختارة
@@ -95,56 +92,68 @@ if df is not None:
     # عرض مربعات الإدخال لتحديد الأعمدة المطلوبة
     for i, (internal_name, prompt) in enumerate(required_fields.items()):
         col = col_mapping_cols[i % 3]
-        default_value = next((col for col in df.columns if col == prompt.split(' ')[-1].replace(')', '')), '')
+        
+        # استنتاج القيمة الافتراضية
+        default_val = st.session_state.column_mapping.get(internal_name)
+        if default_val is None:
+            # محاولة استنتاج من الأعمدة التجريبية
+            default_val = next((col_name for col_name in df.columns if col_name == prompt.split(': ')[-1].replace(')', '')), '')
         
         st.session_state.column_mapping[internal_name] = col.text_input(
             prompt, 
-            value=default_value if not st.session_state.column_mapping.get(internal_name) else st.session_state.column_mapping[internal_name],
+            value=default_val,
             key=f"map_{internal_name}"
         )
 
-    # التحقق من إدخال جميع الأعمدة المطلوبة
+    # التحقق من إدخال جميع الأعمدة المطلوبة وصحتها
     is_ready = True
-    for internal_name in required_fields.keys():
-        if not st.session_state.column_mapping.get(internal_name) or st.session_state.column_mapping[internal_name] not in df.columns:
+    renaming_dict = {}
+    for internal_name, actual_name in st.session_state.column_mapping.items():
+        if not actual_name or actual_name not in df.columns:
             is_ready = False
+        else:
+            renaming_dict[actual_name] = internal_name
             
     if not is_ready:
-        st.warning("يرجى التأكد من إدخال جميع أسماء الأعمدة المطلوبة بشكل صحيح (حساسة لحالة الأحرف).")
+        st.warning("⚠️ يرجى التأكد من إدخال جميع أسماء الأعمدة المطلوبة بشكل **مطابق** (حساسة لحالة الأحرف والمسافات) وموجودة في ملفك.")
         st.stop()
         
     # إعادة تسمية الأعمدة الداخلية باستخدام الأسماء القياسية (Date, Product, ...)
-    df.rename(columns={v: k for k, v in st.session_state.column_mapping.items()}, inplace=True)
+    df.rename(columns=renaming_dict, inplace=True)
     
-    # تحديد الأعمدة الاختيارية (Cost, Customer)
+    # تحديد الأعمدة الاختيارية
     st.markdown("---")
     st.subheader("🛠️ خطوة 2: تحديد الأعمدة الاختيارية")
     
+    # قائمة الأعمدة المتبقية بعد التسمية
+    remaining_cols = [col for col in df.columns if col not in required_fields.keys() and col not in ['Cost', 'Customer']]
+    
     col_opt1, col_opt2 = st.columns(2)
     
-    cost_col = col_opt1.selectbox("عمود التكلفة (اختياري - مطلوب لحساب الربح)", ['(لا يوجد)'] + list(df.columns.drop(required_fields.keys(), errors='ignore')))
-    customer_col = col_opt2.selectbox("عمود العميل/المشتري (اختياري)", ['(لا يوجد)'] + list(df.columns.drop(required_fields.keys(), errors='ignore')))
-
-    # تطبيق الأعمدة الاختيارية
-    if cost_col != '(لا يوجد)':
-        df.rename(columns={cost_col: 'Cost'}, inplace=True)
-    if customer_col != '(لا يوجد)':
-        df.rename(columns={customer_col: 'Customer'}, inplace=True)
-
-
+    # اختيار عمود التكلفة
+    cost_col_name = col_opt1.selectbox("عمود التكلفة (اختياري - مطلوب لحساب الربح)", ['(لا يوجد)'] + remaining_cols)
+    if cost_col_name != '(لا يوجد)':
+        df.rename(columns={cost_col_name: 'Cost'}, inplace=True)
+        remaining_cols.remove(cost_col_name) # إزالته من الخيارات المتبقية
+        
+    # اختيار عمود العميل
+    customer_col_name = col_opt2.selectbox("عمود العميل/المشتري (اختياري)", ['(لا يوجد)'] + remaining_cols)
+    if customer_col_name != '(لا يوجد)':
+        df.rename(columns={customer_col_name: 'Customer'}, inplace=True)
+        
     # تحويل التاريخ
     try:
-        df['Date'] = pd.to_datetime(df['Date'])
-    except Exception:
-        st.error("خطأ في تحويل عمود التاريخ. يرجى التأكد من أن صيغة البيانات في عمود التاريخ صحيحة.")
+        # استخدام coerce لإجبار التحويل مع وضع NaT إذا لم يكن صالحاً
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce') 
+        df.dropna(subset=['Date'], inplace=True) # حذف الصفوف التي لم يتم تحويل تاريخها
+    except Exception as e:
+        st.error(f"❌ خطأ فادح: فشل تحويل عمود التاريخ. يرجى مراجعة بيانات التاريخ في ملفك.")
         st.stop()
         
     # حساب الأعمدة المشتقة
-    if 'Revenue' not in df.columns:
-        df['Revenue'] = df['Price'] * df['Quantity']
+    df['Revenue'] = df['Price'] * df['Quantity']
 
     if 'Cost' not in df.columns:
-        # افتراض التكلفة 0 إذا لم توجد لحساب الربح
         df['Cost'] = 0 
 
     df['Profit'] = df['Revenue'] - (df['Cost'] * df['Quantity'])
