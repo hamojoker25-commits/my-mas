@@ -41,6 +41,7 @@ def generate_data():
         price = np.random.randint(10, 2000)
         cost = price * 0.7  # تكلفة تقديرية 70%
         
+        # نستخدم الأسماء الإنجليزية القياسية للبيانات التجريبية
         data.append([date, prod, cat, reg, cust, price, qty, cost])
         
     df = pd.DataFrame(data, columns=['Date', 'Product', 'Category', 'Region', 'Customer', 'Price', 'Quantity', 'Cost'])
@@ -53,25 +54,73 @@ st.sidebar.header("📂 إعدادات البيانات")
 upload_file = st.sidebar.file_uploader("ارفع ملف البيانات (CSV/Excel)", type=["csv", "xlsx"])
 
 if upload_file:
-    if upload_file.name.endswith('.csv'):
-        df = pd.read_csv(upload_file)
-    else:
-        df = pd.read_excel(upload_file)
+    # محاولة قراءة الملف، مع دعم التشفير العربي لملفات CSV
+    try:
+        if upload_file.name.endswith('.csv'):
+            df = pd.read_csv(upload_file, encoding='utf-8')
+        else:
+            df = pd.read_excel(upload_file)
+    except Exception as e:
+        st.error(f"حدث خطأ أثناء قراءة الملف. يرجى التأكد من التنسيق والترميز (عادةً UTF-8). الخطأ: {e}")
+        st.stop()
 else:
     st.sidebar.info("تم استخدام بيانات تجريبية لأنك لم ترفع ملفاً.")
     df = generate_data()
 
 # ---------------------------------------------------------
-# 4. معالجة البيانات (Data Preprocessing)
+# 4. معالجة البيانات وتوحيد أسماء الأعمدة (NEW FLEXIBILITY)
 # ---------------------------------------------------------
-# التأكد من وجود الأعمدة الأساسية أو إعادة تسميتها لتعمل مع الكود
-required_columns = ['Date', 'Product', 'Category', 'Region', 'Price', 'Quantity']
-missing_cols = [col for col in required_columns if col not in df.columns]
 
-if missing_cols:
-    st.error(f"البيانات تفتقد للأعمدة التالية: {missing_cols}. يرجى التأكد من أسماء الأعمدة.")
+# ✅ آلية توحيد أسماء الأعمدة لدعم العربية والإنجليزية
+# يتم توحيد جميع الأعمدة إلى اللغة الإنجليزية داخلياً لتشغيل الكود بسلاسة
+COLUMN_MAPPING = {
+    'Date': ['Date', 'التاريخ', 'تاريخ', 'date'],
+    'Product': ['Product', 'المنتج', 'منتج', 'product', 'الصنف', 'صنف'],
+    'Category': ['Category', 'الفئة', 'فئة', 'category', 'التصنيف', 'تصنيف'],
+    'Region': ['Region', 'المنطقة', 'منطقة', 'region'],
+    'Price': ['Price', 'السعر', 'سعر', 'price'],
+    'Quantity': ['Quantity', 'الكمية', 'كمية', 'quantity', 'Qty', 'qty'],
+    'Cost': ['Cost', 'التكلفة', 'تكلفة', 'cost'],
+    'Customer': ['Customer', 'العميل', 'عميل', 'customer']
+}
+
+# عكس الخريطة للبحث السريع وتوحيد الأعمدة
+REVERSE_MAPPING = {}
+for internal_name, possible_names in COLUMN_MAPPING.items():
+    for name in possible_names:
+        REVERSE_MAPPING[name.strip().lower()] = internal_name
+
+# تطبيق التوحيد
+current_columns = {col.strip().lower(): col for col in df.columns}
+new_columns = {}
+missing_required = []
+
+for internal_name in ['Date', 'Product', 'Category', 'Region', 'Price', 'Quantity']:
+    found = False
+    for col_lower, col_original in current_columns.items():
+        if col_lower in REVERSE_MAPPING and REVERSE_MAPPING[col_lower] == internal_name:
+            new_columns[col_original] = internal_name
+            found = True
+            break
+    if not found:
+        missing_required.append(internal_name)
+        
+# إضافة الأعمدة الاختيارية (Cost, Customer) إذا وجدت
+for optional_name in ['Cost', 'Customer']:
+    for col_lower, col_original in current_columns.items():
+        if col_lower in REVERSE_MAPPING and REVERSE_MAPPING[col_lower] == optional_name:
+            new_columns[col_original] = optional_name
+            break
+
+# تطبيق إعادة التسمية
+df.rename(columns=new_columns, inplace=True)
+
+# التأكد من الأعمدة المطلوبة
+if missing_required:
+    st.error(f"البيانات تفتقد للأعمدة المطلوبة التالية (أو ما يقابلها بالعربية): **{', '.join(missing_required)}**.")
+    st.info("يرجى التأكد من وجود أعمدة التاريخ، المنتج، الفئة، المنطقة، السعر، والكمية.")
     st.stop()
-
+    
 # تحويل التاريخ
 df['Date'] = pd.to_datetime(df['Date'])
 
