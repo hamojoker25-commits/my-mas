@@ -1,6 +1,4 @@
-streamlit
 pandas
 numpy
-plotly
-deep-translator
+scikit-learn
 openpyxl
