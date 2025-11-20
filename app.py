@@ -8,7 +8,7 @@ warnings.filterwarnings('ignore')
 # ==========================================
 # 1. إعدادات الصفحة
 # ==========================================
-st.set_page_config(page_title="المحلل التفاعلي الدقيق", layout="wide", page_icon="🛠️")
+st.set_page_config(page_title="المحلل الذكي النهائي", layout="wide", page_icon="🛡️")
 
 st.markdown("""
 <style>
@@ -19,14 +19,23 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. منطق التحليل (Logic Core)
+# 2. تهيئة الذاكرة (Fixing the Error Here)
+# ==========================================
+# هنا الحل: بنتأكد إن كل المتغيرات موجودة قبل ما نستخدمها
+if 'brain' not in st.session_state: st.session_state.brain = None
+if 'messages' not in st.session_state: st.session_state.messages = []
+if 'pending_action' not in st.session_state: st.session_state.pending_action = None
+if 'last_file' not in st.session_state: st.session_state.last_file = None  # <-- ده السطر اللي كان ناقص
+
+# ==========================================
+# 3. منطق التحليل (Logic Core)
 # ==========================================
 class InteractiveBrain:
     def __init__(self, df):
         self.df = df
-        # تنظيف أسماء الأعمدة (مسح المسافات الزائدة)
+        # تنظيف أسماء الأعمدة
         self.df.columns = [str(c).strip() for c in self.df.columns]
-        self.cols = df.columns.tolist()
+        self.cols = self.df.columns.tolist()
 
     def identify_requirements(self, query):
         q = query.lower()
@@ -80,6 +89,7 @@ class InteractiveBrain:
         cat_col = selected_cols.get('category')
         date_col = selected_cols.get('date')
 
+        # تنظيف الأرقام
         if num_col:
             df_calc[num_col] = pd.to_numeric(df_calc[num_col], errors='coerce')
 
@@ -118,53 +128,42 @@ class InteractiveBrain:
             val = len(df_calc)
             return f"🔢 **عدد الصفوف في الملف:**\n# {val}", None
 
-        return "حدث خطأ", None
+        return "حدث خطأ غير متوقع", None
 
 # ==========================================
-# 3. واجهة المستخدم
+# 4. واجهة المستخدم
 # ==========================================
-st.title("🎯 المحلل الدقيق (إصلاح مشاكل الملفات)")
+st.title("🎯 المحلل الذكي (إصلاح الأخطاء)")
 
-if 'brain' not in st.session_state: st.session_state.brain = None
-if 'messages' not in st.session_state: st.session_state.messages = []
-if 'pending_action' not in st.session_state: st.session_state.pending_action = None
-
-# Sidebar
+# Sidebar - File Upload
 with st.sidebar:
     st.header("1. رفع الملف")
     uploaded_file = st.file_uploader("Excel/CSV", type=['xlsx', 'csv'])
     
-    # --- كود قراءة الملف المصفح ضد الأخطاء ---
     if uploaded_file:
         try:
-            # محاولة قراءة ملف Excel
+            # منطق قراءة الملف القوي (عربي/إنجليزي)
             if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
                 df = pd.read_excel(uploaded_file)
-            
-            # محاولة قراءة ملف CSV (مع حل مشكلة العربي)
             elif uploaded_file.name.endswith('.csv'):
                 try:
-                    # المحاولة الأولى: الترميز العالمي
                     df = pd.read_csv(uploaded_file, encoding='utf-8')
                 except:
-                    try:
-                        # المحاولة الثانية: ترميز الـ CSV العربي (Excel CSV)
-                        uploaded_file.seek(0)
-                        df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
-                    except:
-                        # المحاولة الثالثة: ترميز ويندوز العربي القديم
-                        uploaded_file.seek(0)
-                        df = pd.read_csv(uploaded_file, encoding='cp1256')
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file, encoding='utf-8-sig') # للعربي أحياناً
+                except:
+                    uploaded_file.seek(0)
+                    df = pd.read_csv(uploaded_file, encoding='cp1256') # ويندوز عربي
             
-            # نجاح القراءة
-            if 'brain' not in st.session_state or st.session_state.last_file != uploaded_file.name:
+            # هنا كان بيحصل الخطأ، دلوقتي صلحناه بوجود last_file في الأول
+            if st.session_state.last_file != uploaded_file.name:
                 st.session_state.brain = InteractiveBrain(df)
                 st.session_state.last_file = uploaded_file.name
-                st.session_state.messages = [{"role": "assistant", "content": "✅ تم قراءة الملف بنجاح! اسألني أي سؤال."}]
+                st.session_state.messages = [{"role": "assistant", "content": "✅ الملف جاهز! اسألني وأنا هطلب منك توضحلي الأعمدة عشان الدقة."}]
                 st.rerun()
-        
+                
         except Exception as e:
-            st.error(f"عذراً، هناك مشكلة في قراءة الملف:\n{e}")
+            st.error(f"مشكلة في الملف: {e}")
 
     if st.button("مسح المحادثة"):
         st.session_state.messages = []
@@ -178,28 +177,30 @@ for msg in st.session_state.messages:
         if "chart" in msg and msg["chart"]:
             st.plotly_chart(msg["chart"], use_container_width=True)
 
-# Input
-if prompt := st.chat_input("اسألني..."):
+# Input Area
+if prompt := st.chat_input("اسألني... (مثلاً: أكثر عميل اشترى)"):
     if st.session_state.brain:
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.rerun()
     else:
         st.warning("ارفع الملف أولاً")
 
-# Logic Handling
+# Logic Processing (After Input)
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user" and not st.session_state.pending_action:
     last_query = st.session_state.messages[-1]["content"]
-    reqs = st.session_state.brain.identify_requirements(last_query)
-    st.session_state.pending_action = reqs
-    st.rerun()
+    brain = st.session_state.brain
+    if brain:
+        reqs = brain.identify_requirements(last_query)
+        st.session_state.pending_action = reqs
+        st.rerun()
 
-# Action Area
+# Interactive Action Area
 if st.session_state.pending_action:
     reqs = st.session_state.pending_action
     cols = st.session_state.brain.cols
     
     with st.chat_message("assistant"):
-        st.markdown(f"🛠️ **لتحديد ({reqs['title']}) بدقة، اختر الأعمدة:**")
+        st.markdown(f"🛠️ **عشان أحسب ({reqs['title']}) صح، اختارلي الأعمدة:**")
         
         if reqs['operation'] == 'count':
             msg, fig = st.session_state.brain.calculate(reqs, {})
@@ -212,14 +213,14 @@ if st.session_state.pending_action:
             
             with c1:
                 if reqs['needs_category']:
-                    sel_cols['category'] = st.selectbox("عمود الأسماء (منتج/فرع):", cols)
+                    sel_cols['category'] = st.selectbox("عمود الأسماء (منتج/عميل):", cols, key="cat_s")
                 if reqs['needs_date']:
-                    sel_cols['date'] = st.selectbox("عمود التاريخ:", cols)
+                    sel_cols['date'] = st.selectbox("عمود التاريخ:", cols, key="date_s")
             with c2:
                 if reqs['needs_numeric']:
-                    sel_cols['numeric'] = st.selectbox("عمود الأرقام (مبيعات/سعر):", cols)
+                    sel_cols['numeric'] = st.selectbox("عمود الأرقام (مبيعات/سعر):", cols, key="num_s")
             
-            if st.button("احسب"):
+            if st.button("احسب النتيجة ✅"):
                 msg, fig = st.session_state.brain.calculate(reqs, sel_cols)
                 st.session_state.messages.append({"role": "assistant", "content": msg, "chart": fig})
                 st.session_state.pending_action = None
