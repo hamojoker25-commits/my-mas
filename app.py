@@ -1,159 +1,242 @@
-import streamlit as st
+# ============================================================
+# 🔥 نظام تحليل بيانات المبيعات + تقرير AI كامل + مختصر
+# 🔥 يدعم عربي + إنجليزي — OOP — منيو — كود واحد
+# ============================================================
+
 import pandas as pd
-import plotly.express as px
+import numpy as np
+import re
+import matplotlib.pyplot as plt
 import warnings
+warnings.filterwarnings("ignore")
 
-warnings.filterwarnings('ignore')
+# ============================================================
+# 📌 كلاس تحميل الملفات
+# ============================================================
+class DataLoader:
+    def load_file(self):
+        print("\n📂 اختر نوع الملف:")
+        print("1. Excel")
+        print("2. CSV")
+        file_type = input("➡ إدخال: ")
 
-# ==========================================
-# 1. إعداد الصفحة (الشكل والجو العام)
-# ==========================================
-st.set_page_config(
-    page_title="أكاديمية تحليل البيانات",
-    layout="wide",
-    page_icon="🎓"
-)
+        file_path = input("\n📄 اكتب مسار الملف: ").strip()
 
-# تنسيق بسيط ومريح للعين
-st.markdown("""
-<style>
-    .stChatInput {position: fixed; bottom: 20px; z-index: 1000;}
-    .stChatMessage {
-        padding: 1.5rem; 
-        border-radius: 15px; 
-        margin-bottom: 1rem; 
-        border: 1px solid #eee;
-        background-color: #f9f9f9;
-    }
-    .stButton button {
-        width: 100%;
-        border-radius: 10px;
-        font-weight: bold;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ==========================================
-# 2. مخ التعليم (The Tutor Brain)
-# ==========================================
-if 'step' not in st.session_state: st.session_state.step = 1
-if 'df' not in st.session_state: st.session_state.df = None
-if 'messages' not in st.session_state: 
-    st.session_state.messages = [{"role": "assistant", "content": "أهلاً يا بطل! 👋 أنا مساعدك التعليمي.\nعشان نبدأ رحلة تحليل البيانات، أول خطوة هي إننا نجيب البيانات نفسها.\n**ممكن ترفع ملف Excel أو CSV من القائمة اللي في الجنب؟**"}]
-
-# ==========================================
-# 3. القائمة الجانبية (المعمل)
-# ==========================================
-with st.sidebar:
-    st.header("📂 معمل البيانات")
-    st.info("هنا بنرفع الملفات عشان نشتغل عليها.")
-    
-    uploaded_file = st.file_uploader("ارفع ملفك هنا", type=['xlsx', 'csv'])
-    
-    if uploaded_file:
-        try:
-            # كود قراءة الملف (بسيط ومباشر)
-            if uploaded_file.name.endswith('.xlsx'):
-                df = pd.read_excel(uploaded_file)
-            else:
-                # محاولة قراءة CSV بأمان
-                try: df = pd.read_csv(uploaded_file, encoding='utf-8')
-                except: df = pd.read_csv(uploaded_file, encoding='cp1256')
-            
-            st.session_state.df = df
-            st.success(f"تمام! تم قراءة الملف: {len(df)} صف.")
-            
-            # الانتقال للخطوة الثانية لو لسه في الأولى
-            if st.session_state.step == 1:
-                st.session_state.step = 2
-                st.session_state.messages.append({"role": "assistant", "content": "عظيم! 🎉 الملف اترفع بنجاح.\nدلوقتي البيانات بقت معانا. تقدر تشوف عينة منها في الجدول تحت.\n**جرب تسألني سؤال بسيط زي: 'كام عدد الصفوف؟' أو 'اعرض أول 5 صفوف'.**"})
-                st.rerun()
-                
-        except Exception as e:
-            st.error("في مشكلة في الملف ده، جرب ملف تاني.")
-
-    if st.button("🗑️ ابدأ من جديد"):
-        st.session_state.clear()
-        st.rerun()
-
-# ==========================================
-# 4. منطقة الشات (الفصل الدراسي)
-# ==========================================
-st.title("🎓 أكاديمية تحليل البيانات التفاعلية")
-st.caption("اتعلم تحليل البيانات وإنت بتدردش")
-
-# عرض المحادثة
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-        if "chart" in msg:
-            st.plotly_chart(msg["chart"], use_container_width=True)
-        if "data" in msg:
-            st.dataframe(msg["data"])
-
-# استقبال الأسئلة
-if prompt := st.chat_input("اكتب سؤالك هنا..."):
-    # 1. عرض سؤال الطالب
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    # 2. رد المعلم (المنطق)
-    with st.chat_message("assistant"):
-        response = ""
-        chart = None
-        data_view = None
-        
-        if st.session_state.df is None:
-            response = "يا صديقي، لازم نرفع ملف الأول عشان نلاقي حاجة نحللها! 😉 بص على القائمة الجانبية."
+        if file_type == "1":
+            return pd.read_excel(file_path)
+        elif file_type == "2":
+            return pd.read_csv(file_path)
         else:
-            df = st.session_state.df
-            q = prompt.lower()
-            
-            # --- درس 1: استكشاف البيانات ---
-            if any(x in q for x in ['صفوف', 'عدد', 'count', 'كم']):
-                response = f"سؤال ممتاز! في لغة تحليل البيانات، بنستخدم دالة اسمها `len()` أو `shape` عشان نعرف الحجم.\nملفك فيه **{len(df)}** صف (سجل)."
-            
-            elif any(x in q for x in ['اعرض', 'وريني', 'show', 'head', 'عينة']):
-                response = "حاضر، دي أول 5 صفوف من بياناتك. الدالة المستخدمة هنا اسمها `df.head()`:"
-                data_view = df.head()
-            
-            elif any(x in q for x in ['اعمدة', 'اسماء', 'columns']):
-                response = "دي أسماء الأعمدة (Columns) اللي في ملفك:"
-                data_view = pd.DataFrame(df.columns, columns=["اسم العمود"])
+            print("❌ نوع الملف خطأ")
+            return None
 
-            # --- درس 2: الحسابات البسيطة ---
-            elif any(x in q for x in ['مجموع', 'اجمالي', 'sum']):
-                # نحاول نلاقي عمود أرقام
-                num_cols = df.select_dtypes(include=['number']).columns
-                if len(num_cols) > 0:
-                    col = num_cols[0] # ناخد أول واحد كمثال
-                    total = df[col].sum()
-                    response = f"عشان نحسب المجموع، بنستخدم `sum()`. مثلاً لعمود **{col}**:\nالإجمالي = `{total:,.2f}`"
-                else:
-                    response = "ملفك مفيهوش أرقام عشان أجمعها! 😅"
+# ============================================================
+# 📌 كلاس تنظيف البيانات
+# ============================================================
+class DataCleaner:
+    def __init__(self, df):
+        self.df = df
 
-            # --- درس 3: الرسم البياني ---
-            elif any(x in q for x in ['رسم', 'بياني', 'chart', 'plot']):
-                # نحاول نرسم حاجة بسيطة
-                num_cols = df.select_dtypes(include=['number']).columns
-                if len(num_cols) > 0:
-                    col = num_cols[0]
-                    response = f"الرسم البياني بيخلي البيانات تنطق! ده توزيع لقيم عمود **{col}**:"
-                    chart = px.histogram(df, x=col, title=f"توزيع {col}")
-                else:
-                    response = "محتاجين أعمدة رقمية عشان نرسم."
+    def clean(self):
+        print("\n🧹 بدء تنظيف البيانات...")
 
-            # --- رد عام ---
-            else:
-                response = "سؤال حلو! بس أنا لسه بتعلم. جرب تسألني عن: 'عدد الصفوف'، 'المجموع'، أو 'رسم بياني'."
+        # إزالة الأعمدة الفارغة
+        self.df.dropna(axis=1, how='all', inplace=True)
 
-        st.markdown(response)
-        if data_view is not None: st.dataframe(data_view)
-        if chart is not None: st.plotly_chart(chart, use_container_width=True)
-        
-        # حفظ الرد في الذاكرة
-        msg_data = {"role": "assistant", "content": response}
-        if chart: msg_data["chart"] = chart
-        if data_view is not None: msg_data["data"] = data_view
-        st.session_state.messages.append(msg_data)
+        # إزالة الصفوف الفارغة
+        self.df.dropna(axis=0, how='all', inplace=True)
+
+        # إصلاح أسماء الأعمدة
+        self.df.columns = [col.strip().replace(" ", "_") for col in self.df.columns]
+
+        # استبدال القيم الغريبة
+        self.df.replace(["-", "--", "N/A", "NA", "null"], np.nan, inplace=True)
+
+        # تحويل الأعمدة الرقمية
+        for col in self.df.columns:
+            if self.df[col].dtype == "object":
+                if self.df[col].str.replace(".", "", 1).str.isdigit().sum() > 0:
+                    self.df[col] = pd.to_numeric(self.df[col], errors="ignore")
+
+        print("✅ تم تنظيف البيانات بنجاح")
+        return self.df
+
+# ============================================================
+# 📌 كلاس التحليل
+# ============================================================
+class SalesAnalyzer:
+
+    def __init__(self, df):
+        self.df = df
+
+    def ask_columns(self):
+        print("\n📝 اكتب أسماء الأعمدة المطلوبة (عربي أو إنجليزي):")
+        self.col_product = input("🔹 عمود المنتج: ")
+        self.col_sales = input("🔹 عمود المبيعات: ")
+        self.col_profit = input("🔹 عمود الربح: ")
+        self.col_date = input("🔹 عمود التاريخ: ")
+        self.col_customer = input("🔹 عميل (اختياري): ")
+        self.col_region = input("🔹 المنطقة (اختياري): ")
+
+    # ------------------------- تحليل كامل -------------------------
+    def full_analysis(self):
+        report = {}
+
+        # إجمالي المبيعات
+        report["total_sales"] = self.df[self.col_sales].sum()
+
+        # إجمالي الأرباح
+        report["total_profit"] = self.df[self.col_profit].sum()
+
+        # أفضل المنتجات
+        report["top_products"] = (
+            self.df.groupby(self.col_product)[self.col_sales].sum().sort_values(ascending=False).head(5)
+        )
+
+        # أسوأ المنتجات
+        report["worst_products"] = (
+            self.df.groupby(self.col_product)[self.col_sales].sum().sort_values().head(5)
+        )
+
+        # الربحية
+        report["top_profit_products"] = (
+            self.df.groupby(self.col_product)[self.col_profit].sum().sort_values(ascending=False).head(5)
+        )
+
+        # تحليل شهري
+        df_date = self.df.copy()
+        df_date[self.col_date] = pd.to_datetime(df_date[self.col_date], errors="coerce")
+        df_date["month"] = df_date[self.col_date].dt.to_period("M").astype(str)
+
+        report["monthly_sales"] = (
+            df_date.groupby("month")[self.col_sales].sum()
+        )
+
+        return report
+
+    # ------------------------- تقرير AI شامل -------------------------
+    def generate_ai_full(self, report):
+        text = f"""
+===============================
+📊 AI FULL SMART REPORT
+===============================
+
+📌 **إجمالي المبيعات:** {report['total_sales']:,}
+📌 **إجمالي الأرباح:** {report['total_profit']:,}
+
+-------------------------------
+🔥 أفضل المنتجات:
+{report['top_products']}
+
+-------------------------------
+⚠️ أسوأ المنتجات:
+{report['worst_products']}
+
+-------------------------------
+💰 أكثر المنتجات ربحية:
+{report['top_profit_products']}
+
+-------------------------------
+📅 المبيعات الشهرية:
+{report['monthly_sales']}
+
+===============================
+🎯 تحليل الذكاء الاصطناعي:
+===============================
+
+✔ المنتجات الأعلى مبيعًا يجب دعمها بمخزون أكبر + حملات تسويق.  
+✔ المنتجات الضعيفة قد تحتاج تخفيضات أو إعادة تسعير.  
+✔ إذا كان هناك تذبذب شهري → راجع موسمية السوق + العروض.  
+✔ إذا كانت الأرباح منخفضة رغم المبيعات العالية → مشكلة تسعير أو تكلفة عالية.  
+✔ إذا كانت فترات الركود كثيرة → جرّب عروض Flash Sale.  
+
+===============================
+🚀 توصيات لتحسين الأداء:
+===============================
+
+1️⃣ ركّز على المنتجات الأعلى أرباحًا وليس فقط الأعلى مبيعًا.  
+2️⃣ اطلق Bundle Offers لزيادة متوسط الفاتورة.  
+3️⃣ استخدم Cross-selling في المنتجات القريبة.  
+4️⃣ حسّن المخزون للمنتجات المطلوبة قبل أن تنفد.  
+5️⃣ راقب الاتجاه الشهري لمعرفة فترات الذروة والضعف.  
+"""
+        return text
+
+    # ------------------------- تقرير AI مختصر -------------------------
+    def generate_ai_short(self, report):
+        text = f"""
+===============================
+📄 EXECUTIVE SUMMARY (SHORT)
+===============================
+
+✔ إجمالي المبيعات: {report['total_sales']:,}  
+✔ إجمالي الأرباح: {report['total_profit']:,}
+
+🔥 أهم 3 فرص:
+1. دعم المنتجات الأعلى مبيعًا بمخزون إضافي.
+2. إعادة تسعير المنتجات الضعيفة.
+3. زيادة الهوامش على المنتجات ذات الطلب العالي.
+
+⚠ أهم 3 مشاكل:
+1. منتجات بطيئة الحركة.
+2. تذبذب مبيعات شهري.
+3. أرباح منخفضة لمنتجات عالية البيع.
+
+🚀 أهم 3 حلول:
+1. عروض للمنتجات الراكدة.
+2. حملات استهداف للعملاء المكررون.
+3. مراقبة سلسلة التوريد وتحسين المخزون.
+"""
+        return text
+
+# ============================================================
+# 📌 المنيو الرئيسية
+# ============================================================
+class MainMenu:
+
+    def run(self):
+
+        print("\n==============================")
+        print("📊 نظام تحليل بيانات مبيعات كامل + AI")
+        print("==============================")
+
+        # تحميل الملف
+        loader = DataLoader()
+        df = loader.load_file()
+
+        if df is None:
+            return
+
+        # تنظيف
+        cleaner = DataCleaner(df)
+        df = cleaner.clean()
+
+        # تحليل
+        analyzer = SalesAnalyzer(df)
+        analyzer.ask_columns()
+        report = analyzer.full_analysis()
+
+        # عرض اختيارات AI
+        print("\n🤖 اختر نوع التقرير:")
+        print("1. تقرير AI كامل")
+        print("2. تقرير AI مختصر")
+        print("3. الاثنين معاً")
+
+        choice = input("➡ إدخال: ")
+
+        if choice == "1":
+            print(analyzer.generate_ai_full(report))
+
+        elif choice == "2":
+            print(analyzer.generate_ai_short(report))
+
+        else:
+            print(analyzer.generate_ai_full(report))
+            print("\n---------------------------------\n")
+            print(analyzer.generate_ai_short(report))
+
+# ============================================================
+# 🚀 تشغيل البرنامج
+# ============================================================
+if __name__ == "__main__":
+    MainMenu().run()
