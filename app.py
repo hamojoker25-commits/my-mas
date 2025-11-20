@@ -6,239 +6,154 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ==========================================
-# 1. إعدادات الصفحة
+# 1. إعداد الصفحة (الشكل والجو العام)
 # ==========================================
-st.set_page_config(page_title="المصمم MOHAMED", layout="wide", page_icon="👑")
+st.set_page_config(
+    page_title="أكاديمية تحليل البيانات",
+    layout="wide",
+    page_icon="🎓"
+)
 
+# تنسيق بسيط ومريح للعين
 st.markdown("""
 <style>
     .stChatInput {position: fixed; bottom: 20px; z-index: 1000;}
-    .stChatMessage {padding: 1.5rem; border-radius: 15px; margin-bottom: 1rem; border: 1px solid #e0e0e0;}
-    .block-container {padding-bottom: 150px;}
-    
-    /* تخصيص العنوان */
-    h1 {
-        background: linear-gradient(to right, #1FA2FF, #12D8FA, #A6FFCB);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+    .stChatMessage {
+        padding: 1.5rem; 
+        border-radius: 15px; 
+        margin-bottom: 1rem; 
+        border: 1px solid #eee;
+        background-color: #f9f9f9;
+    }
+    .stButton button {
+        width: 100%;
+        border-radius: 10px;
         font-weight: bold;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. تهيئة الذاكرة (Session State)
+# 2. مخ التعليم (The Tutor Brain)
 # ==========================================
-if 'brain' not in st.session_state: st.session_state.brain = None
-if 'messages' not in st.session_state: st.session_state.messages = []
-if 'pending_action' not in st.session_state: st.session_state.pending_action = None
-if 'last_file' not in st.session_state: st.session_state.last_file = None  # حل مشكلة الذاكرة
-
-# ==========================================
-# 3. منطق التحليل (Logic Core)
-# ==========================================
-class InteractiveBrain:
-    def __init__(self, df):
-        self.df = df
-        # تنظيف أسماء الأعمدة
-        self.df.columns = [str(c).strip() for c in self.df.columns]
-        self.cols = self.df.columns.tolist()
-
-    def identify_requirements(self, query):
-        q = query.lower()
-        reqs = {
-            'needs_numeric': False,
-            'needs_category': False,
-            'needs_date': False,
-            'operation': 'sum',
-            'title': ''
-        }
-
-        if any(x in q for x in ['اكثر', 'اعلى', 'اكبر', 'افضل', 'top', 'max', 'best']):
-            reqs['operation'] = 'top'
-            reqs['needs_numeric'] = True
-            reqs['needs_category'] = True
-            reqs['title'] = 'الأكثر/الأعلى'
-
-        elif any(x in q for x in ['اقل', 'ادنى', 'اصغر', 'اسوا', 'min', 'worst']):
-            reqs['operation'] = 'bottom'
-            reqs['needs_numeric'] = True
-            reqs['needs_category'] = True
-            reqs['title'] = 'الأقل/الأدنى'
-
-        elif any(x in q for x in ['متوسط', 'معدل', 'avg']):
-            reqs['operation'] = 'mean'
-            reqs['needs_numeric'] = True
-            reqs['title'] = 'المتوسط'
-
-        elif any(x in q for x in ['تطور', 'زمن', 'trend']):
-            reqs['operation'] = 'trend'
-            reqs['needs_numeric'] = True
-            reqs['needs_date'] = True
-            reqs['title'] = 'التحليل الزمني'
-
-        elif any(x in q for x in ['عدد', 'count']):
-            reqs['operation'] = 'count'
-            reqs['title'] = 'عدد السجلات'
-
-        else:
-            reqs['operation'] = 'sum'
-            reqs['needs_numeric'] = True
-            reqs['title'] = 'الإجمالي'
-
-        return reqs
-
-    def calculate(self, reqs, selected_cols):
-        df_calc = self.df.copy()
-        op = reqs['operation']
-        
-        num_col = selected_cols.get('numeric')
-        cat_col = selected_cols.get('category')
-        date_col = selected_cols.get('date')
-
-        # تنظيف الأرقام
-        if num_col:
-            df_calc[num_col] = pd.to_numeric(df_calc[num_col], errors='coerce')
-
-        if op == 'top':
-            grouped = df_calc.groupby(cat_col)[num_col].sum().sort_values(ascending=False).head(5)
-            best_name = grouped.index[0]
-            best_val = grouped.iloc[0]
-            msg = f"🏆 **{reqs['title']} في ({cat_col}) حسب ({num_col}):**\n# {best_name}\n**(القيمة: {best_val:,.2f})**"
-            fig = px.bar(grouped, x=grouped.index, y=grouped.values, title=f"أعلى 5 {cat_col}", color=grouped.values)
-            return msg, fig
-
-        elif op == 'bottom':
-            grouped = df_calc.groupby(cat_col)[num_col].sum().sort_values(ascending=True).head(5)
-            worst_name = grouped.index[0]
-            worst_val = grouped.iloc[0]
-            msg = f"📉 **{reqs['title']} في ({cat_col}) حسب ({num_col}):**\n# {worst_name}\n**(القيمة: {worst_val:,.2f})**"
-            fig = px.bar(grouped, x=grouped.index, y=grouped.values, title=f"أقل 5 {cat_col}")
-            return msg, fig
-
-        elif op == 'trend':
-            df_calc[date_col] = pd.to_datetime(df_calc[date_col], errors='coerce')
-            trend = df_calc.groupby(date_col)[num_col].sum().reset_index()
-            msg = f"📈 **تطور {num_col} عبر الزمن:**"
-            fig = px.line(trend, x=date_col, y=num_col, markers=True)
-            return msg, fig
-
-        elif op == 'sum':
-            val = df_calc[num_col].sum()
-            return f"💰 **إجمالي {num_col}:**\n# {val:,.2f}", None
-
-        elif op == 'mean':
-            val = df_calc[num_col].mean()
-            return f"📊 **متوسط {num_col}:**\n# {val:,.2f}", None
-
-        elif op == 'count':
-            val = len(df_calc)
-            return f"🔢 **عدد الصفوف في الملف:**\n# {val}", None
-
-        return "حدث خطأ غير متوقع", None
+if 'step' not in st.session_state: st.session_state.step = 1
+if 'df' not in st.session_state: st.session_state.df = None
+if 'messages' not in st.session_state: 
+    st.session_state.messages = [{"role": "assistant", "content": "أهلاً يا بطل! 👋 أنا مساعدك التعليمي.\nعشان نبدأ رحلة تحليل البيانات، أول خطوة هي إننا نجيب البيانات نفسها.\n**ممكن ترفع ملف Excel أو CSV من القائمة اللي في الجنب؟**"}]
 
 # ==========================================
-# 4. واجهة المستخدم (المصمم MOHAMED)
+# 3. القائمة الجانبية (المعمل)
 # ==========================================
-st.title("المصمم MOHAMED")
-st.caption("تحليل بيانات دقيق وتفاعلي")
-
-# Sidebar - File Upload
 with st.sidebar:
-    st.header("1. رفع الملف")
-    uploaded_file = st.file_uploader("Excel/CSV", type=['xlsx', 'csv'])
+    st.header("📂 معمل البيانات")
+    st.info("هنا بنرفع الملفات عشان نشتغل عليها.")
+    
+    uploaded_file = st.file_uploader("ارفع ملفك هنا", type=['xlsx', 'csv'])
     
     if uploaded_file:
         try:
-            df = None
-            # قراءة Excel
-            if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
+            # كود قراءة الملف (بسيط ومباشر)
+            if uploaded_file.name.endswith('.xlsx'):
                 df = pd.read_excel(uploaded_file)
-            
-            # قراءة CSV بطريقة ذكية (تجنب خطأ SyntaxError)
-            elif uploaded_file.name.endswith('.csv'):
-                # قائمة الترميزات المحتملة
-                encodings_to_try = ['utf-8', 'utf-8-sig', 'cp1256', 'latin1']
-                
-                # المحاولة الأولى: قراءة عادية
-                for encoding in encodings_to_try:
-                    try:
-                        uploaded_file.seek(0)
-                        df = pd.read_csv(uploaded_file, encoding=encoding)
-                        break # لو نجح، اخرج من اللوب
-                    except Exception:
-                        continue # لو فشل، جرب اللي بعده
-            
-            if df is not None:
-                # نجاح القراءة
-                if st.session_state.last_file != uploaded_file.name:
-                    st.session_state.brain = InteractiveBrain(df)
-                    st.session_state.last_file = uploaded_file.name
-                    st.session_state.messages = [{"role": "assistant", "content": "✅ الملف جاهز! اسألني وأنا هطلب منك توضحلي الأعمدة."}]
-                    st.rerun()
             else:
-                st.error("فشل قراءة الملف بكل الطرق الممكنة. تأكد أن الملف سليم.")
-
+                # محاولة قراءة CSV بأمان
+                try: df = pd.read_csv(uploaded_file, encoding='utf-8')
+                except: df = pd.read_csv(uploaded_file, encoding='cp1256')
+            
+            st.session_state.df = df
+            st.success(f"تمام! تم قراءة الملف: {len(df)} صف.")
+            
+            # الانتقال للخطوة الثانية لو لسه في الأولى
+            if st.session_state.step == 1:
+                st.session_state.step = 2
+                st.session_state.messages.append({"role": "assistant", "content": "عظيم! 🎉 الملف اترفع بنجاح.\nدلوقتي البيانات بقت معانا. تقدر تشوف عينة منها في الجدول تحت.\n**جرب تسألني سؤال بسيط زي: 'كام عدد الصفوف؟' أو 'اعرض أول 5 صفوف'.**"})
+                st.rerun()
+                
         except Exception as e:
-            st.error(f"خطأ غير متوقع: {e}")
+            st.error("في مشكلة في الملف ده، جرب ملف تاني.")
 
-    if st.button("مسح المحادثة"):
-        st.session_state.messages = []
-        st.session_state.pending_action = None
+    if st.button("🗑️ ابدأ من جديد"):
+        st.session_state.clear()
         st.rerun()
 
-# Chat Display
+# ==========================================
+# 4. منطقة الشات (الفصل الدراسي)
+# ==========================================
+st.title("🎓 أكاديمية تحليل البيانات التفاعلية")
+st.caption("اتعلم تحليل البيانات وإنت بتدردش")
+
+# عرض المحادثة
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
-        if "chart" in msg and msg["chart"]:
+        if "chart" in msg:
             st.plotly_chart(msg["chart"], use_container_width=True)
+        if "data" in msg:
+            st.dataframe(msg["data"])
 
-# Input Area
-if prompt := st.chat_input("اسألني... (مثلاً: أكثر عميل اشترى)"):
-    if st.session_state.brain:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        st.rerun()
-    else:
-        st.warning("ارفع الملف أولاً")
+# استقبال الأسئلة
+if prompt := st.chat_input("اكتب سؤالك هنا..."):
+    # 1. عرض سؤال الطالب
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-# Logic Processing
-if st.session_state.messages and st.session_state.messages[-1]["role"] == "user" and not st.session_state.pending_action:
-    last_query = st.session_state.messages[-1]["content"]
-    brain = st.session_state.brain
-    if brain:
-        reqs = brain.identify_requirements(last_query)
-        st.session_state.pending_action = reqs
-        st.rerun()
-
-# Interactive Action Area
-if st.session_state.pending_action:
-    reqs = st.session_state.pending_action
-    cols = st.session_state.brain.cols
-    
+    # 2. رد المعلم (المنطق)
     with st.chat_message("assistant"):
-        st.markdown(f"🛠️ **لتحديد ({reqs['title']}) بدقة، اختر الأعمدة:**")
+        response = ""
+        chart = None
+        data_view = None
         
-        if reqs['operation'] == 'count':
-            msg, fig = st.session_state.brain.calculate(reqs, {})
-            st.session_state.messages.append({"role": "assistant", "content": msg})
-            st.session_state.pending_action = None
-            st.rerun()
+        if st.session_state.df is None:
+            response = "يا صديقي، لازم نرفع ملف الأول عشان نلاقي حاجة نحللها! 😉 بص على القائمة الجانبية."
         else:
-            c1, c2 = st.columns(2)
-            sel_cols = {}
+            df = st.session_state.df
+            q = prompt.lower()
             
-            with c1:
-                if reqs['needs_category']:
-                    sel_cols['category'] = st.selectbox("عمود الأسماء (منتج/عميل):", cols, key="cat_s")
-                if reqs['needs_date']:
-                    sel_cols['date'] = st.selectbox("عمود التاريخ:", cols, key="date_s")
-            with c2:
-                if reqs['needs_numeric']:
-                    sel_cols['numeric'] = st.selectbox("عمود الأرقام (مبيعات/سعر):", cols, key="num_s")
+            # --- درس 1: استكشاف البيانات ---
+            if any(x in q for x in ['صفوف', 'عدد', 'count', 'كم']):
+                response = f"سؤال ممتاز! في لغة تحليل البيانات، بنستخدم دالة اسمها `len()` أو `shape` عشان نعرف الحجم.\nملفك فيه **{len(df)}** صف (سجل)."
             
-            if st.button("احسب النتيجة ✅"):
-                msg, fig = st.session_state.brain.calculate(reqs, sel_cols)
-                st.session_state.messages.append({"role": "assistant", "content": msg, "chart": fig})
-                st.session_state.pending_action = None
-                st.rerun()
+            elif any(x in q for x in ['اعرض', 'وريني', 'show', 'head', 'عينة']):
+                response = "حاضر، دي أول 5 صفوف من بياناتك. الدالة المستخدمة هنا اسمها `df.head()`:"
+                data_view = df.head()
+            
+            elif any(x in q for x in ['اعمدة', 'اسماء', 'columns']):
+                response = "دي أسماء الأعمدة (Columns) اللي في ملفك:"
+                data_view = pd.DataFrame(df.columns, columns=["اسم العمود"])
+
+            # --- درس 2: الحسابات البسيطة ---
+            elif any(x in q for x in ['مجموع', 'اجمالي', 'sum']):
+                # نحاول نلاقي عمود أرقام
+                num_cols = df.select_dtypes(include=['number']).columns
+                if len(num_cols) > 0:
+                    col = num_cols[0] # ناخد أول واحد كمثال
+                    total = df[col].sum()
+                    response = f"عشان نحسب المجموع، بنستخدم `sum()`. مثلاً لعمود **{col}**:\nالإجمالي = `{total:,.2f}`"
+                else:
+                    response = "ملفك مفيهوش أرقام عشان أجمعها! 😅"
+
+            # --- درس 3: الرسم البياني ---
+            elif any(x in q for x in ['رسم', 'بياني', 'chart', 'plot']):
+                # نحاول نرسم حاجة بسيطة
+                num_cols = df.select_dtypes(include=['number']).columns
+                if len(num_cols) > 0:
+                    col = num_cols[0]
+                    response = f"الرسم البياني بيخلي البيانات تنطق! ده توزيع لقيم عمود **{col}**:"
+                    chart = px.histogram(df, x=col, title=f"توزيع {col}")
+                else:
+                    response = "محتاجين أعمدة رقمية عشان نرسم."
+
+            # --- رد عام ---
+            else:
+                response = "سؤال حلو! بس أنا لسه بتعلم. جرب تسألني عن: 'عدد الصفوف'، 'المجموع'، أو 'رسم بياني'."
+
+        st.markdown(response)
+        if data_view is not None: st.dataframe(data_view)
+        if chart is not None: st.plotly_chart(chart, use_container_width=True)
+        
+        # حفظ الرد في الذاكرة
+        msg_data = {"role": "assistant", "content": response}
+        if chart: msg_data["chart"] = chart
+        if data_view is not None: msg_data["data"] = data_view
+        st.session_state.messages.append(msg_data)
