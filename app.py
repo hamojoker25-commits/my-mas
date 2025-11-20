@@ -1,5 +1,5 @@
 # ============================================================
-# 🔥 نظام تحليل بيانات المبيعات + AI كامل ومختصر عبر Streamlit
+# 🔥 Streamlit Sales Analyzer + AI + Custom Reports + Logging
 # ============================================================
 
 import streamlit as st
@@ -7,7 +7,22 @@ import pandas as pd
 import numpy as np
 import re
 import warnings
+import os
+from datetime import datetime
 warnings.filterwarnings("ignore")
+
+# ============================================================
+# 📌 إنشاء مجلد لحفظ العمليات
+# ============================================================
+if not os.path.exists("operations_logs"):
+    os.makedirs("operations_logs")
+
+def save_operation(text, name):
+    """حفظ أي عملية في ملف نصي"""
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"operations_logs/{name}_{timestamp}.txt"
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(text)
 
 # ============================================================
 # 📌 تنظيف البيانات
@@ -28,12 +43,14 @@ def clean_data(df):
         except:
             pass
 
+    save_operation("تم تنفيذ عملية تنظيف البيانات", "cleaning")
+
     return df
 
 # ============================================================
-# 📌 التحليل الكامل
+# 📌 التحليل الأساسي + الإضافي
 # ============================================================
-def full_analysis(df, col_product, col_sales, col_profit, col_date):
+def full_analysis(df, col_product, col_sales, col_profit, col_date, col_customer, col_region):
 
     report = {}
 
@@ -52,13 +69,44 @@ def full_analysis(df, col_product, col_sales, col_profit, col_date):
         df.groupby(col_product)[col_profit].sum().sort_values(ascending=False).head(5)
     )
 
+    # -----------------------------------------
+    # 🔥 إضافات جديدة
+    # -----------------------------------------
+
+    if col_customer.strip() != "":
+        report["top_customers"] = (
+            df.groupby(col_customer)[col_sales].sum().sort_values(ascending=False).head(5)
+        )
+    else:
+        report["top_customers"] = "No customer column provided"
+
+    if col_region.strip() != "":
+        report["top_regions"] = (
+            df.groupby(col_region)[col_sales].sum().sort_values(ascending=False).head(5)
+        )
+    else:
+        report["top_regions"] = "No region column provided"
+
+    report["avg_sale"] = df[col_sales].mean()
+    report["avg_profit"] = df[col_profit].mean()
+    report["profit_ratio"] = (df[col_profit].sum() / df[col_sales].sum()) * 100
+
+    # تحليل التاريخ
     df_date = df.copy()
     df_date[col_date] = pd.to_datetime(df_date[col_date], errors="coerce")
     df_date["month"] = df_date[col_date].dt.to_period("M").astype(str)
+    df_date["day"] = df_date[col_date].dt.to_period("D").astype(str)
 
-    report["monthly_sales"] = (
-        df_date.groupby("month")[col_sales].sum()
-    )
+    report["monthly_sales"] = df_date.groupby("month")[col_sales].sum()
+
+    report["best_month"] = report["monthly_sales"].idxmax()
+    report["worst_month"] = report["monthly_sales"].idxmin()
+
+    report["daily_sales"] = df_date.groupby("day")[col_sales].sum()
+    report["best_day"] = report["daily_sales"].idxmax()
+    report["worst_day"] = report["daily_sales"].idxmin()
+
+    save_operation(str(report), "analysis")
 
     return report
 
@@ -66,56 +114,52 @@ def full_analysis(df, col_product, col_sales, col_profit, col_date):
 # 📌 تقرير AI كامل
 # ============================================================
 def ai_full_report(report):
-    return f"""
+    text = f"""
 ===============================
 📊 AI FULL SMART REPORT
 ===============================
 
 📌 إجمالي المبيعات: {report['total_sales']:,}
 📌 إجمالي الأرباح: {report['total_profit']:,}
+📌 نسبة الربح: {report['profit_ratio']:.2f}%
 
--------------------------------
 🔥 أفضل المنتجات:
 {report['top_products']}
 
--------------------------------
 ⚠️ أسوأ المنتجات:
 {report['worst_products']}
 
--------------------------------
-💰 أكثر المنتجات ربحية:
+💰 أعلى المنتجات ربحًا:
 {report['top_profit_products']}
 
--------------------------------
-📅 المبيعات الشهرية:
-{report['monthly_sales']}
+👥 أفضل العملاء:
+{report['top_customers']}
 
-===============================
-🎯 تحليل الذكاء الاصطناعي:
-===============================
+🌍 أفضل المناطق:
+{report['top_regions']}
 
-✔ ركّز على المنتجات الأعلى مبيعًا.  
-✔ المنتجات الضعيفة تحتاج تخفيضات أو إعادة تسعير.  
-✔ ارتفاع المبيعات لا يعني ارتفاع الأرباح — راقب هوامش الربح.  
-✔ لو في تذبذب شهري → موسمية السوق تؤثر على المبيعات.  
-✔ قلل المخزون الزائد لزيادة الربحية.
+📅 أفضل الشهور: {report['best_month']}
+📅 أسوأ الشهور: {report['worst_month']}
 
-===============================
-🚀 توصيات لتحسين الأداء:
-===============================
+📆 أفضل يوم: {report['best_day']}
+📆 أسوأ يوم: {report['worst_day']}
 
-1️⃣ دعم المنتجات الأعلى طلبًا.  
-2️⃣ عروض على المنتجات الراكدة.  
-3️⃣ رفع هامش الربح للمنتجات المطلوبة.  
-4️⃣ تحسين سلسلة التوريد.  
-5️⃣ مراقبة الاتجاهات الشهرية.
+🎯 تحليل:
+✔ دعم المنتجات الأعلى مبيعًا  
+✔ إعادة تسعير المنتجات الضعيفة  
+✔ استهداف أفضل العملاء  
+✔ رفع المخزون للمنتجات المطلوبة  
+✔ معالجة ضعف بعض المناطق  
+
 """
+    save_operation(text, "AI_FULL")
+    return text
 
 # ============================================================
 # 📌 تقرير AI مختصر
 # ============================================================
 def ai_short_report(report):
-    return f"""
+    text = f"""
 ===============================
 📄 EXECUTIVE SUMMARY
 ===============================
@@ -123,53 +167,64 @@ def ai_short_report(report):
 ✔ إجمالي المبيعات: {report['total_sales']:,}  
 ✔ إجمالي الأرباح: {report['total_profit']:,}
 
-🔥 أهم الفرص:
-- دعم أفضل المنتجات.
-- إعادة تسعير المنتجات الضعيفة.
-- تحسين هامش الربح.
+🔥 الفرص:
+- رفع هامش ربح المنتجات القوية  
+- دعم العملاء المتكررين  
+- تقليل مخزون المنتجات البطيئة  
 
 ⚠ المشاكل:
-- منتجات بطيئة.
-- أرباح منخفضة لبعض المنتجات.
-- تذبذب شهري.
+- منتجات بطيئة الحركة  
+- مناطق ضعيفة  
+- تذبذب شهري  
 
 🚀 الحلول:
-- عروض.
-- تحسين المخزون.
-- رفع التسويق.
+- عروض، باقات، خصومات  
+- تحسين التسويق  
+- رفع سرعة الاستجابة في المخزون  
 """
+    save_operation(text, "AI_SHORT")
+    return text
+
+# ============================================================
+# 📌 تقرير AI قابل للتخصيص
+# ============================================================
+def ai_custom(report, choices):
+    lines = []
+    if "مبيعات" in choices:
+        lines.append(f"- إجمالي المبيعات: {report['total_sales']:,}")
+        lines.append(f"- أفضل الشهور: {report['best_month']}")
+    if "أرباح" in choices:
+        lines.append(f"- إجمالي الأرباح: {report['total_profit']:,}")
+        lines.append(f"- نسبة الربح: {report['profit_ratio']:.2f}%")
+    if "منتجات" in choices:
+        lines.append(f"- أفضل المنتجات:\n{report['top_products']}")
+        lines.append(f"- أسوأ المنتجات:\n{report['worst_products']}")
+
+    text = "===============================\n📄 CUSTOM REPORT\n===============================\n\n"
+    text += "\n".join(lines)
+
+    save_operation(text, "AI_CUSTOM")
+    return text
 
 # ============================================================
 # 🚀 STREAMLIT APP
 # ============================================================
 st.set_page_config(page_title="Sales Analysis AI", layout="wide")
+st.title("📊 نظام تحليل بيانات المبيعات + تقارير AI + حفظ العمليات")
 
-st.title("📊 نظام تحليل بيانات المبيعات + تقارير AI")
-st.write("🔹 يدعم عربي + إنجليزي — يعمل على Streamlit — جاهز لأي ملف")
-
-# ====================================================================
-# تحميل الملف
-# ====================================================================
 uploaded = st.file_uploader("📂 ارفع ملف CSV أو Excel", type=["csv", "xlsx", "xls"])
 
 if uploaded:
-    # قراءة الملف
     if uploaded.name.endswith(".csv"):
         df = pd.read_csv(uploaded)
     else:
         df = pd.read_excel(uploaded)
 
-    st.success("✅ تم تحميل الملف بنجاح")
+    st.dataframe(df.head())
 
-    # عرض أول 10 صفوف
-    st.subheader("📄 عرض البيانات")
-    st.dataframe(df.head(10))
-
-    # تنظيف
     df = clean_data(df)
 
-    # إدخال أسماء الأعمدة
-    st.subheader("📝 أدخل أسماء الأعمدة (عربي/إنجليزي)")
+    st.subheader("📝 أدخل أسماء الأعمدة")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -183,46 +238,25 @@ if uploaded:
         col_region = st.text_input("عمود المنطقة (اختياري):")
 
     if st.button("🚀 بدء التحليل"):
-        if col_product and col_sales and col_profit and col_date:
+        report = full_analysis(df, col_product, col_sales, col_profit, col_date, col_customer, col_region)
 
-            report = full_analysis(df, col_product, col_sales, col_profit, col_date)
+        st.success("تم التحليل")
 
-            st.success("✅ تم تنفيذ التحليل بنجاح")
+        st.write(report)
 
-            # عرض النتائج
-            st.subheader("📊 نتائج التحليل")
-            st.write("### 🔥 إجمالي المبيعات:", report["total_sales"])
-            st.write("### 💰 إجمالي الأرباح:", report["total_profit"])
+        st.subheader("🤖 اختر نوع التقرير")
 
-            st.write("### 🥇 أفضل المنتجات")
-            st.dataframe(report["top_products"])
+        choice = st.radio("نوع التقرير", ["تقرير كامل", "تقرير مختصر", "تقرير قابل للتخصيص"])
 
-            st.write("### 🐌 أسوأ المنتجات")
-            st.dataframe(report["worst_products"])
+        if choice == "تقرير كامل":
+            st.text(ai_full_report(report))
 
-            st.write("### 💵 المنتجات الأعلى ربحًا")
-            st.dataframe(report["top_profit_products"])
-
-            st.write("### 📅 المبيعات الشهرية")
-            st.dataframe(report["monthly_sales"])
-
-            st.subheader("🤖 تقرير AI")
-
-            # اختيار نوع التقرير
-            report_type = st.radio(
-                "اختر نوع التقرير:",
-                ["تقرير كامل", "تقرير مختصر", "الاثنين معًا"]
-            )
-
-            if report_type == "تقرير كامل":
-                st.text(ai_full_report(report))
-
-            elif report_type == "تقرير مختصر":
-                st.text(ai_short_report(report))
-
-            else:
-                st.text(ai_full_report(report))
-                st.text(ai_short_report(report))
+        elif choice == "تقرير مختصر":
+            st.text(ai_short_report(report))
 
         else:
-            st.error("❌ يجب إدخال جميع أسماء الأعمدة الأساسية أولاً")
+            options = st.multiselect("اختر نوع التحليل:", ["مبيعات", "أرباح", "منتجات"])
+            if options:
+                st.text(ai_custom(report, options))
+            else:
+                st.warning("اختر نوع واحد على الأقل من التحليل")
