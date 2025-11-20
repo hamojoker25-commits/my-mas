@@ -4,289 +4,312 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.ensemble import IsolationForest
+from thefuzz import process, fuzz
 import re
 import warnings
 
-# تجاهل التحذيرات لضمان نظافة الواجهة
+# تجاهل التحذيرات
 warnings.filterwarnings('ignore')
 
 # ==========================================
-# 1. إعدادات الصفحة وتصميم الواجهة (UI/UX)
+# 1. إعدادات الصفحة والتصميم
 # ==========================================
 st.set_page_config(
-    page_title="Enterprise AI Analyst",
+    page_title="AI Data Analyst Pro",
     layout="wide",
     page_icon="🧠",
     initial_sidebar_state="expanded"
 )
 
-# تحسين مظهر الشات باستخدام CSS
 st.markdown("""
 <style>
-    .stChatInput {
-        position: fixed;
-        bottom: 20px;
-        z-index: 1000;
-    }
-    .block-container {
-        padding-bottom: 100px;
-    }
+    .stChatInput {position: fixed; bottom: 20px; z-index: 1000;}
+    .block-container {padding-bottom: 120px;}
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. المحرك الإدراكي (Auto-Detection Engine)
+# 2. المحرك الإدراكي العميق (Deep AI Core)
 # ==========================================
-class AutoIdentifier:
+class DataBrain:
     def __init__(self, df):
         self.df = df.copy()
-        self.roles = {
-            'date_col': None,
-            'target_col': None,
-            'cat_cols': []
-        }
-        self._detect_roles()
-
-    def _detect_roles(self):
-        # 1. تنظيف أسماء الأعمدة
+        # تنظيف أسماء الأعمدة
         self.df.columns = [str(c).strip() for c in self.df.columns]
-        cols = self.df.columns
         
-        # القواميس (عربي/إنجليزي)
-        keywords = {
-            'date': ['date', 'time', 'تاريخ', 'وقت', 'زمن', 'يوم', 'شهر'],
-            'money_qty': ['price', 'sales', 'amount', 'total', 'salary', 'revenue', 'profit', 'cost', 'qty', 'stock', 
-                          'سعر', 'مبيعات', 'مبلغ', 'اجمالي', 'راتب', 'ربح', 'تكلفة', 'رصيد', 'قيمة', 'كمية', 'مخزون', 'عدد']
-        }
+        # 1. فهرسة البيانات (Indexing)
+        self.column_types = self._identify_columns()
+        self.value_index = self._index_unique_values()
 
-        # A. البحث عن التاريخ
-        for col in cols:
-            # لو العمود أصلاً نوعه تاريخ
+    def _identify_columns(self):
+        """تحديد أنواع الأعمدة بدقة عالية"""
+        roles = {'numeric': [], 'date': [], 'text': []}
+        
+        for col in self.df.columns:
+            # هل هو تاريخ؟
             if pd.api.types.is_datetime64_any_dtype(self.df[col]):
-                self.roles['date_col'] = col
-                break
-            # لو الاسم يوحي بتاريخ، نحاول نحوله
-            if any(k in col.lower() for k in keywords['date']):
+                roles['date'].append(col)
+            # هل هو رقم؟
+            elif pd.api.types.is_numeric_dtype(self.df[col]):
+                roles['numeric'].append(col)
+            # إذن هو نص
+            else:
+                roles['text'].append(col)
+                
+        # محاولة اكتشاف تواريخ مختبئة في نصوص
+        for col in roles['text']:
+            if 'date' in col.lower() or 'تاريخ' in col or 'وقت' in col:
                 try:
                     self.df[col] = pd.to_datetime(self.df[col], errors='coerce')
-                    # نتأكد إنه اتحول فعلاً
                     if pd.api.types.is_datetime64_any_dtype(self.df[col]):
-                        self.roles['date_col'] = col
-                        break
+                        roles['text'].remove(col)
+                        roles['date'].append(col)
                 except: pass
-
-        # B. البحث عن الهدف الرقمي (Target)
-        potential_targets = []
-        for col in cols:
-            # لازم يكون رقمي
-            if pd.api.types.is_numeric_dtype(self.df[col]):
-                score = 0
-                if any(k in col.lower() for k in keywords['money_qty']): score += 2
-                # نفضل العمود اللي فيه قيم فريدة كتير (عشان مش يكون ID أو كود)
-                if self.df[col].nunique() > 5: score += 1
-                potential_targets.append((col, score))
-        
-        if potential_targets:
-            # نختار صاحب أعلى سكور
-            potential_targets.sort(key=lambda x: x[1], reverse=True)
-            self.roles['target_col'] = potential_targets[0][0]
-
-        # C. البحث عن التصنيفات (Categories)
-        for col in cols:
-            if col == self.roles['date_col'] or col == self.roles['target_col']:
-                continue
-            # نعتبره تصنيف لو هو نصي وعدد قيمه معقول
-            if self.df[col].dtype == 'object' or pd.api.types.is_string_dtype(self.df[col]):
-                if self.df[col].nunique() < 2000: # رقم تقديري
-                    self.roles['cat_cols'].append(col)
-
-# ==========================================
-# 3. المحلل الذكي (Analytical Brain)
-# ==========================================
-class SmartAnalyst:
-    def __init__(self, df, roles):
-        self.df = df
-        self.roles = roles
-        self.target = roles['target_col']
-        self.date_col = roles['date_col']
-        self.cats = roles['cat_cols']
-
-    def process_query(self, query):
-        # إذا لم يتم تحديد عمود رقمي، لا يمكن التحليل
-        if not self.target:
-            return "⚠️ عذراً، لم أستطع تحديد عمود للأرقام (مبيعات/رواتب/كميات) تلقائياً. يرجى التأكد من الملف.", None
-
-        query = query.lower()
-        filtered_df = self.df.copy()
-        filters_applied = []
-
-        # 1. البحث والفلترة الذكية
-        for cat in self.cats:
-            # البحث عن قيم العمود داخل سؤال المستخدم
-            unique_vals = self.df[cat].dropna().unique()
-            for val in unique_vals:
-                val_str = str(val).lower()
-                # تنظيف القيمة للبحث
-                if len(val_str) > 1 and val_str in query:
-                    mask = filtered_df[cat].astype(str).str.contains(val_str, case=False, na=False)
-                    if mask.any():
-                        filtered_df = filtered_df[mask]
-                        filters_applied.append(f"{val}")
-                        break # نكتفي بقيمة واحدة من نفس العمود لمنع التضارب
-
-        context = f" (في: {' + '.join(filters_applied)})" if filters_applied else " (الإجمالي)"
-        
-        # 2. فهم نوع السؤال (Intent)
-
-        # --- المجموع / الإجمالي ---
-        if any(x in query for x in ['اجمالي', 'مجموع', 'total', 'sum', 'كم']):
-            val = filtered_df[self.target].sum()
-            return f"💰 **إجمالي {self.target}** {context}:\n# {val:,.2f}", None
-
-        # --- المتوسط ---
-        elif any(x in query for x in ['متوسط', 'معدل', 'avg', 'average']):
-            val = filtered_df[self.target].mean()
-            return f"📊 **متوسط {self.target}** {context}:\n# {val:,.2f}", None
-
-        # --- الأفضل / الأعلى ---
-        elif any(x in query for x in ['افضل', 'اعلى', 'اكثر', 'top', 'best', 'max']):
-            if self.cats:
-                # نختار أول عمود تصنيف مناسب (أو العمود اللي تم الفلترة عليه لو مفيش غيره)
-                group_col = self.cats[0]
-                # لو المستخدم سأل عن تصنيف محدد (مثلاً "أفضل موظف") نحاول نلاقيه
-                for c in self.cats:
-                    if c.lower() in query:
-                        group_col = c
-                        break
                 
-                top = filtered_df.groupby(group_col)[self.target].sum().sort_values(ascending=False).head(5)
-                fig = px.bar(top, x=top.index, y=self.target, title=f"Top 5 - {group_col}", color=self.target)
-                return f"🏆 **الأعلى أداءً** {context}:", fig
-            else:
-                val = filtered_df[self.target].max()
-                return f"🚀 **أعلى رقم مسجل:** {val:,.2f}", None
+        return roles
 
-        # --- التطور الزمني (Time Series) ---
-        elif any(x in query for x in ['تطور', 'زمن', 'تاريخ', 'trend', 'time', 'date']) and self.date_col:
-            # التأكد أن التواريخ مرتبة
-            trend = filtered_df.sort_values(self.date_col)
-            fig = px.line(trend, x=self.date_col, y=self.target, title=f"{self.target} Trend")
-            return f"📈 **التحليل الزمني** {context}:", fig
+    def _index_unique_values(self):
+        """إنشاء خريطة لكل كلمة موجودة في الملف للبحث السريع"""
+        index = {}
+        for col in self.column_types['text']:
+            # نأخذ القيم الفريدة وننظفها
+            unique_vals = self.df[col].dropna().astype(str).unique()
+            for val in unique_vals:
+                # المفتاح هو القيمة، والقيمة هي اسم العمود
+                index[val.lower()] = col
+        return index
 
-        # --- الأخطاء / الشواذ (Anomaly) ---
-        elif any(x in query for x in ['خطأ', 'مشكلة', 'شاذ', 'anomaly', 'error']):
+    def normalize_text(self, text):
+        """توحيد النصوص العربية والإنجليزية للبحث"""
+        text = str(text).lower()
+        text = re.sub(r'[إأآا]', 'ا', text) # توحيد الألف
+        text = re.sub(r'ة', 'ه', text)     # توحيد التاء المربوطة
+        text = re.sub(r'ى', 'ي', text)     # توحيد الياء
+        text = re.sub(r'[^\w\s]', '', text) # إزالة التشكيل والرموز
+        return text
+
+    def understand_query(self, query):
+        """
+        المخ الحقيقي: يفهم نية المستخدم ويستخرج الفلاتر والأهداف
+        """
+        query_norm = self.normalize_text(query)
+        
+        intent = {
+            'operation': 'sum', # default
+            'target_col': None,
+            'filters': {},
+            'group_by': None,
+            'time_frame': None,
+            'chart_type': None
+        }
+
+        # 1. اكتشاف العملية المطلوبة (Operation)
+        if any(x in query_norm for x in ['متوسط', 'معدل', 'avg', 'average']): 
+            intent['operation'] = 'mean'
+        elif any(x in query_norm for x in ['عدد', 'count', 'كم']): 
+            intent['operation'] = 'count'
+        elif any(x in query_norm for x in ['اقصى', 'اعلى', 'اكبر', 'max', 'best', 'top']): 
+            intent['operation'] = 'max'
+        elif any(x in query_norm for x in ['ادنى', 'اقل', 'اصغر', 'min', 'worst']): 
+            intent['operation'] = 'min'
+        elif any(x in query_norm for x in ['تطور', 'نمو', 'trend', 'line']): 
+            intent['chart_type'] = 'line'
+        elif any(x in query_norm for x in ['توزيع', 'نسبة', 'pie']): 
+            intent['chart_type'] = 'pie'
+
+        # 2. اكتشاف العمود المستهدف (Target Column)
+        # نبحث عن اسم عمود رقمي في السؤال
+        best_score = 0
+        for col in self.column_types['numeric']:
+            col_norm = self.normalize_text(col)
+            # استخدام Fuzzy Matching للتعامل مع الأخطاء الإملائية
+            score = fuzz.partial_ratio(col_norm, query_norm)
+            if score > 80 and score > best_score:
+                intent['target_col'] = col
+                best_score = score
+        
+        # لو ملقاش عمود محدد، بياخد أول عمود فلوس أو كمية
+        if not intent['target_col'] and self.column_types['numeric']:
+            # تفضيل الأعمدة اللي فيها "Sales", "Price", "Total"
+            priority_cols = [c for c in self.column_types['numeric'] if any(x in c.lower() for x in ['sales', 'total', 'price', 'amount', 'مبيعات', 'سعر', 'اجمالي'])]
+            intent['target_col'] = priority_cols[0] if priority_cols else self.column_types['numeric'][0]
+
+        # 3. اكتشاف الفلاتر (Filters) - أذكى جزء
+        # يفحص كل كلمة في السؤال هل هي موجودة كقيمة في الداتا؟
+        words = query.split()
+        for word in words:
+            word_clean = self.normalize_text(word)
+            if len(word_clean) < 2: continue
+            
+            # البحث في فهرس القيم
+            # نستخدم process.extractOne للبحث الذكي عن أقرب كلمة
+            matches = process.extractOne(word, self.value_index.keys(), scorer=fuzz.ratio)
+            if matches and matches[1] > 85: # لو نسبة التطابق أعلى من 85%
+                found_val = matches[0]
+                col_name = self.value_index[found_val]
+                # نأخذ القيمة الأصلية من الداتا فريم
+                # (نبحث عن القيمة الأصلية التي طابقت القيمة المصغرة)
+                original_val = self.df[self.df[col_name].astype(str).str.lower() == found_val].iloc[0][col_name]
+                intent['filters'][col_name] = original_val
+
+        # 4. اكتشاف التجميع (Group By)
+        # لو السؤال فيه "لكل موظف" أو "حسب المنتج"
+        if 'لكل' in query_norm or 'حسب' in query_norm or 'by' in query.lower():
+            for col in self.column_types['text']:
+                col_norm = self.normalize_text(col)
+                if fuzz.partial_ratio(col_norm, query_norm) > 85:
+                    intent['group_by'] = col
+                    break
+        
+        return intent
+
+    def execute_query(self, query):
+        intent = self.understand_query(query)
+        
+        # 1. تطبيق الفلاتر
+        filtered_df = self.df.copy()
+        filter_desc = []
+        for col, val in intent['filters'].items():
+            filtered_df = filtered_df[filtered_df[col] == val]
+            filter_desc.append(f"{col} = {val}")
+        
+        context_msg = f" (لـ {' و '.join(filter_desc)})" if filter_desc else " (للكل)"
+        target = intent['target_col']
+        
+        # 2. معالجة الأوامر الخاصة (الشواذ)
+        if any(x in query for x in ['خطأ', 'مشكلة', 'شاذ', 'anomaly']):
             model = IsolationForest(contamination=0.01, random_state=42)
-            data_fit = self.df[[self.target]].fillna(0) # نستخدم الداتا الأصلية للكشف الأدق
-            preds = model.fit_predict(data_fit)
+            data = self.df[[target]].fillna(0)
+            preds = model.fit_predict(data)
             anomalies = self.df[preds == -1]
+            return f"🚨 **كشف الأخطاء:** وجدت {len(anomalies)} حالات شاذة في {target}.", anomalies
+
+        # 3. تنفيذ الحسابات
+        result_text = ""
+        chart = None
+        
+        try:
+            # حالة التجميع (Group By) أو الرسم البياني
+            if intent['group_by'] or intent['chart_type'] or 'افضل' in query or 'top' in query:
+                group_col = intent['group_by']
+                
+                # لو مفيش عمود تجميع محدد بس طلب "أفضل"، نخمن عمود تصنيف
+                if not group_col and self.column_types['text']:
+                    group_col = self.column_types['text'][0] # افتراض
+                
+                if group_col:
+                    grouped = filtered_df.groupby(group_col)[target].sum().sort_values(ascending=False)
+                    
+                    if 'افضل' in query or 'top' in query or 'max' in intent['operation']:
+                        grouped = grouped.head(5)
+                        title = f"🏆 أفضل 5 {group_col} حسب {target}"
+                    else:
+                        grouped = grouped.head(10) # عرض أول 10 لتجنب الزحمة
+                        title = f"تحليل {target} حسب {group_col}"
+                    
+                    if intent['chart_type'] == 'pie':
+                        chart = px.pie(names=grouped.index, values=grouped.values, title=title)
+                    else:
+                        chart = px.bar(x=grouped.index, y=grouped.values, title=title, labels={'x': group_col, 'y': target})
+                    
+                    result_text = f"📊 **تحليل مفصل {context_msg}:**\nتم التجميع حسب **{group_col}**. انظر الرسم البياني."
             
-            if not anomalies.empty:
-                fig = go.Figure(data=[go.Table(
-                    header=dict(values=list(anomalies.columns), fill_color='red', font=dict(color='white')),
-                    cells=dict(values=[anomalies[k].tolist() for k in anomalies.columns])
-                )])
-                return f"🚨 **كشف الأخطاء:** وجدت {len(anomalies)} عمليات غير منطقية (شاذة إحصائياً):", fig
+            # حالة التطور الزمني
+            elif intent['chart_type'] == 'line' and self.column_types['date']:
+                date_col = self.column_types['date'][0]
+                # التجميع الشهري افتراضياً
+                trend = filtered_df.set_index(date_col).resample('M')[target].sum().reset_index()
+                chart = px.line(trend, x=date_col, y=target, title=f"تطور {target} عبر الزمن")
+                result_text = f"📈 **التريند الزمني {context_msg}:**"
+
+            # الحالة العادية (رقم واحد)
             else:
-                return "✅ البيانات سليمة تماماً، لم أجد أي قيم شاذة.", None
+                val = 0
+                op_name = ""
+                if intent['operation'] == 'sum':
+                    val = filtered_df[target].sum()
+                    op_name = "إجمالي"
+                elif intent['operation'] == 'mean':
+                    val = filtered_df[target].mean()
+                    op_name = "متوسط"
+                elif intent['operation'] == 'max':
+                    val = filtered_df[target].max()
+                    op_name = "أقصى"
+                elif intent['operation'] == 'min':
+                    val = filtered_df[target].min()
+                    op_name = "أدنى"
+                elif intent['operation'] == 'count':
+                    val = len(filtered_df)
+                    op_name = "عدد"
+                
+                result_text = f"🔢 **النتيجة {context_msg}:**\n{op_name} **{target}** = `{val:,.2f}`"
 
-        # --- تقرير عام ---
-        else:
-            val = filtered_df[self.target].sum()
-            count = len(filtered_df)
-            msg = f"""
-            🤖 **تحليل سريع {context}:**
-            - **الهدف:** {self.target}
-            - **عدد العمليات:** {count}
-            - **الإجمالي:** {val:,.2f}
-            
-            💡 *اسألني: "أفضل منتج"، "تطور المبيعات"، "هل توجد أخطاء؟"*
-            """
-            return msg, None
+        except Exception as e:
+            result_text = f"⚠️ عذراً، حدث خطأ أثناء الحساب. تأكد أن العمود '{target}' يحتوي على أرقام.\n(الخطأ: {str(e)})"
+
+        return result_text, chart
 
 # ==========================================
-# 4. الواجهة الرئيسية (Main App Logic)
+# 3. واجهة المستخدم
 # ==========================================
+st.title("🤖 العقل المحلل (AI Brain)")
 
-# إدارة الذاكرة
-if 'df' not in st.session_state: st.session_state.df = None
-if 'analyst' not in st.session_state: st.session_state.analyst = None
-if 'messages' not in st.session_state: 
-    st.session_state.messages = [{"role": "assistant", "content": "مرحباً! 👋 ارفع ملف البيانات وسأقوم بتحليله فوراً."}]
-
-st.title("🧠 Enterprise AI Analyst")
-
-# --- Sidebar (File Upload) ---
+# --- Sidebar ---
 with st.sidebar:
     st.header("📂 البيانات")
-    uploaded_file = st.file_uploader("ارفع ملف (Excel/CSV)", type=['xlsx', 'csv'])
+    uploaded_file = st.file_uploader("ارفع الملف (Excel/CSV)", type=['xlsx', 'csv'])
     
-    if uploaded_file and st.session_state.df is None:
+    if uploaded_file:
         try:
-            # قراءة الملف
             if uploaded_file.name.endswith('.csv'):
                 df = pd.read_csv(uploaded_file)
             else:
                 df = pd.read_excel(uploaded_file)
             
-            # التشغيل التلقائي (Auto-ML)
-            identifier = AutoIdentifier(df)
-            
-            # حفظ النتائج
-            st.session_state.df = identifier.df # الداتا بعد تنظيف التواريخ
-            st.session_state.analyst = SmartAnalyst(st.session_state.df, identifier.roles)
-            
-            # رسالة ترحيب توضح ما تم اكتشافه
-            roles = identifier.roles
-            welcome_msg = f"""
-            **✅ تم تحليل الملف بنجاح!**
-            - العمود الرقمي (الهدف): `{roles['target_col']}`
-            - عمود التاريخ: `{roles['date_col'] if roles['date_col'] else 'غير موجود'}`
-            - أعمدة التصنيف: `{len(roles['cat_cols'])}` أعمدة.
-            
-            **أنا جاهز للأسئلة الآن!** 🚀
-            """
-            st.session_state.messages.append({"role": "assistant", "content": welcome_msg})
-            st.rerun()
-            
+            # تشغيل المخ
+            if 'brain' not in st.session_state or st.session_state.last_file != uploaded_file.name:
+                st.session_state.brain = DataBrain(df)
+                st.session_state.last_file = uploaded_file.name
+                st.session_state.messages = [{"role": "assistant", "content": f"✅ تم قراءة الملف وفهرسة {len(df)} سجل.\nأنا جاهز! جرب تقول: 'مبيعات احمد' أو 'أفضل منتج' أو 'تطور الأرباح'."}]
+                st.rerun()
+                
         except Exception as e:
-            st.error(f"حدث خطأ في الملف: {e}")
+            st.error("فشل قراءة الملف.")
 
-    if st.button("🔄 بدء جديد"):
-        st.session_state.df = None
-        st.session_state.analyst = None
-        st.session_state.messages = [{"role": "assistant", "content": "مرحباً! 👋 ارفع ملف البيانات وسأقوم بتحليله فوراً."}]
+    if st.button("🗑️ مسح المحادثة"):
+        st.session_state.messages = []
         st.rerun()
 
-# --- Chat Interface ---
+# --- Chat Logic ---
+if 'messages' not in st.session_state:
+    st.session_state.messages = [{"role": "assistant", "content": "مرحباً 👋 ارفع الملف واسألني أي سؤال بالعامية أو الفصحى."}]
 
-# عرض الرسائل
 for msg in st.session_state.messages:
-    # تحديد الأفاتار (شكل الايقونة)
-    avatar = "🤖" if msg["role"] == "assistant" else "👤"
-    with st.chat_message(msg["role"], avatar=avatar):
+    with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
-        # عرض الرسم البياني إن وجد
-        if "chart" in msg and msg["chart"]:
-            st.plotly_chart(msg["chart"], use_container_width=True)
+        if "chart" in msg and msg["chart"] is not None:
+            # التحقق إذا كان الرسم البياني عبارة عن داتا فريم (للأخطاء) أو رسم (Plotly)
+            if isinstance(msg["chart"], pd.DataFrame):
+                st.dataframe(msg["chart"])
+            else:
+                st.plotly_chart(msg["chart"], use_container_width=True)
 
-# استقبال المدخلات
-if prompt := st.chat_input("اسألني عن بياناتك..."):
-    if st.session_state.analyst:
-        # 1. عرض رسالة المستخدم
+if prompt := st.chat_input("اكتب سؤالك هنا..."):
+    if 'brain' in st.session_state:
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user", avatar="👤"):
+        with st.chat_message("user"):
             st.markdown(prompt)
 
-        # 2. معالجة الرد
-        with st.chat_message("assistant", avatar="🤖"):
-            with st.spinner("جاري التحليل..."):
-                response_text, chart = st.session_state.analyst.process_query(prompt)
+        with st.chat_message("assistant"):
+            with st.spinner("جاري التفكير..."):
+                response, chart = st.session_state.brain.execute_query(prompt)
+                st.markdown(response)
+                if chart is not None:
+                    if isinstance(chart, pd.DataFrame):
+                        st.dataframe(chart)
+                    else:
+                        st.plotly_chart(chart, use_container_width=True)
                 
-                st.markdown(response_text)
-                if chart:
-                    st.plotly_chart(chart, use_container_width=True)
-                
-                # حفظ الرد في الذاكرة
-                st.session_state.messages.append({"role": "assistant", "content": response_text, "chart": chart})
+                st.session_state.messages.append({"role": "assistant", "content": response, "chart": chart})
     else:
-        st.error("يرجى رفع ملف البيانات أولاً!")
+        st.warning("يرجى رفع الملف أولاً!")
