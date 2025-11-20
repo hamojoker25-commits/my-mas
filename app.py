@@ -8,7 +8,7 @@ warnings.filterwarnings('ignore')
 # ==========================================
 # 1. إعدادات الصفحة
 # ==========================================
-st.set_page_config(page_title="المحلل الذكي النهائي", layout="wide", page_icon="🚀")
+st.set_page_config(page_title="المحلل الذكي (النسخة النهائية)", layout="wide", page_icon="✅")
 
 st.markdown("""
 <style>
@@ -19,78 +19,48 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. تهيئة الذاكرة
+# 2. تهيئة الذاكرة (Session State)
 # ==========================================
 if 'brain' not in st.session_state: st.session_state.brain = None
 if 'messages' not in st.session_state: st.session_state.messages = []
 if 'pending_action' not in st.session_state: st.session_state.pending_action = None
-if 'last_file' not in st.session_state: st.session_state.last_file = None
+if 'df' not in st.session_state: st.session_state.df = None # هنا الحل: بنخزن الداتا نفسها
 
 # ==========================================
-# 3. منطق التحليل (Logic Core)
+# 3. المخ (Logic Core)
 # ==========================================
 class InteractiveBrain:
     def __init__(self, df):
         self.df = df
-        # تنظيف أسماء الأعمدة
         self.df.columns = [str(c).strip() for c in self.df.columns]
         self.cols = self.df.columns.tolist()
 
     def identify_requirements(self, query):
         q = query.lower()
-        reqs = {
-            'needs_numeric': False,
-            'needs_category': False,
-            'needs_date': False,
-            'operation': 'sum',
-            'title': ''
-        }
+        reqs = {'needs_numeric': False, 'needs_category': False, 'needs_date': False, 'operation': 'sum', 'title': ''}
 
         if any(x in q for x in ['اكثر', 'اعلى', 'اكبر', 'افضل', 'top', 'max', 'best']):
-            reqs['operation'] = 'top'
-            reqs['needs_numeric'] = True
-            reqs['needs_category'] = True
-            reqs['title'] = 'الأكثر/الأعلى'
-
+            reqs.update({'operation': 'top', 'needs_numeric': True, 'needs_category': True, 'title': 'الأكثر/الأعلى'})
         elif any(x in q for x in ['اقل', 'ادنى', 'اصغر', 'اسوا', 'min', 'worst']):
-            reqs['operation'] = 'bottom'
-            reqs['needs_numeric'] = True
-            reqs['needs_category'] = True
-            reqs['title'] = 'الأقل/الأدنى'
-
+            reqs.update({'operation': 'bottom', 'needs_numeric': True, 'needs_category': True, 'title': 'الأقل/الأدنى'})
         elif any(x in q for x in ['متوسط', 'معدل', 'avg']):
-            reqs['operation'] = 'mean'
-            reqs['needs_numeric'] = True
-            reqs['title'] = 'المتوسط'
-
+            reqs.update({'operation': 'mean', 'needs_numeric': True, 'title': 'المتوسط'})
         elif any(x in q for x in ['تطور', 'زمن', 'trend']):
-            reqs['operation'] = 'trend'
-            reqs['needs_numeric'] = True
-            reqs['needs_date'] = True
-            reqs['title'] = 'التحليل الزمني'
-
+            reqs.update({'operation': 'trend', 'needs_numeric': True, 'needs_date': True, 'title': 'التحليل الزمني'})
         elif any(x in q for x in ['عدد', 'count']):
-            reqs['operation'] = 'count'
-            reqs['title'] = 'عدد السجلات'
-
+            reqs.update({'operation': 'count', 'title': 'عدد السجلات'})
         else:
-            reqs['operation'] = 'sum'
-            reqs['needs_numeric'] = True
-            reqs['title'] = 'الإجمالي'
-
+            reqs.update({'operation': 'sum', 'needs_numeric': True, 'title': 'الإجمالي'})
         return reqs
 
     def calculate(self, reqs, selected_cols):
         df_calc = self.df.copy()
         op = reqs['operation']
-        
         num_col = selected_cols.get('numeric')
         cat_col = selected_cols.get('category')
         date_col = selected_cols.get('date')
 
-        # تنظيف الأرقام
-        if num_col:
-            df_calc[num_col] = pd.to_numeric(df_calc[num_col], errors='coerce')
+        if num_col: df_calc[num_col] = pd.to_numeric(df_calc[num_col], errors='coerce')
 
         if op == 'top':
             grouped = df_calc.groupby(cat_col)[num_col].sum().sort_values(ascending=False).head(5)
@@ -99,7 +69,7 @@ class InteractiveBrain:
             msg = f"🏆 **{reqs['title']} في ({cat_col}) حسب ({num_col}):**\n# {best_name}\n**(القيمة: {best_val:,.2f})**"
             fig = px.bar(grouped, x=grouped.index, y=grouped.values, title=f"أعلى 5 {cat_col}", color=grouped.values)
             return msg, fig
-
+        
         elif op == 'bottom':
             grouped = df_calc.groupby(cat_col)[num_col].sum().sort_values(ascending=True).head(5)
             worst_name = grouped.index[0]
@@ -126,49 +96,44 @@ class InteractiveBrain:
         elif op == 'count':
             val = len(df_calc)
             return f"🔢 **عدد الصفوف في الملف:**\n# {val}", None
-
-        return "حدث خطأ غير متوقع", None
+            
+        return "خطأ غير متوقع", None
 
 # ==========================================
-# 4. واجهة المستخدم (مع إصلاح قراءة الملفات)
+# 4. واجهة المستخدم (حل مشكلة الرفع)
 # ==========================================
 st.title("🎯 المحلل الذكي (النسخة المستقرة)")
 
-# Sidebar - File Upload
+# Sidebar
 with st.sidebar:
     st.header("1. رفع الملف")
     uploaded_file = st.file_uploader("Excel/CSV", type=['xlsx', 'csv'])
     
+    # هنا الحل الجذري: لو الملف اترفع، بنحفظه وننساه
     if uploaded_file:
-        try:
-            df = None
-            # قراءة Excel
-            if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
-                df = pd.read_excel(uploaded_file)
-            
-            # قراءة CSV بطريقة ذكية (تجنب خطأ SyntaxError)
-            elif uploaded_file.name.endswith('.csv'):
-                encodings_to_try = ['utf-8', 'utf-8-sig', 'cp1256', 'latin1']
-                for encoding in encodings_to_try:
-                    try:
-                        uploaded_file.seek(0)
-                        df = pd.read_csv(uploaded_file, encoding=encoding)
-                        break # لو نجح، اخرج من اللوب
-                    except Exception:
-                        continue # لو فشل، جرب اللي بعده
-            
-            if df is not None:
-                # نجاح القراءة
-                if st.session_state.last_file != uploaded_file.name:
-                    st.session_state.brain = InteractiveBrain(df)
-                    st.session_state.last_file = uploaded_file.name
-                    st.session_state.messages = [{"role": "assistant", "content": "✅ الملف جاهز! اسألني وأنا هطلب منك توضحلي الأعمدة."}]
-                    st.rerun()
-            else:
-                st.error("فشل قراءة الملف بكل الطرق الممكنة. تأكد أن الملف سليم.")
-
-        except Exception as e:
-            st.error(f"خطأ غير متوقع: {e}")
+        if st.session_state.df is None: # لو لسه مقرناش الملف
+            try:
+                if uploaded_file.name.endswith('.xlsx'): df = pd.read_excel(uploaded_file)
+                else:
+                    # محاولات قراءة CSV
+                    try: df = pd.read_csv(uploaded_file, encoding='utf-8')
+                    except: df = pd.read_csv(uploaded_file, encoding='cp1256') # عربي
+                
+                st.session_state.df = df
+                st.session_state.brain = InteractiveBrain(df)
+                st.session_state.messages = [{"role": "assistant", "content": "✅ الملف وصل! أنا جاهز، اسألني أي سؤال."}]
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"خطأ في الملف: {e}")
+    
+    if st.session_state.df is not None:
+        st.success("✅ الملف محفوظ وجاهز للتحليل")
+        if st.button("رفع ملف جديد"):
+            st.session_state.df = None
+            st.session_state.brain = None
+            st.session_state.messages = []
+            st.rerun()
 
     if st.button("مسح المحادثة"):
         st.session_state.messages = []
@@ -182,13 +147,13 @@ for msg in st.session_state.messages:
         if "chart" in msg and msg["chart"]:
             st.plotly_chart(msg["chart"], use_container_width=True)
 
-# Input Area
-if prompt := st.chat_input("اسألني... (مثلاً: أكثر عميل اشترى)"):
-    if st.session_state.brain:
+# Input Area - بيظهر فقط لو الملف مرفوع
+if st.session_state.df is not None:
+    if prompt := st.chat_input("اسألني... (مثلاً: أكثر عميل اشترى)"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.rerun()
-    else:
-        st.warning("ارفع الملف الأول")
+else:
+    st.info("👈 من فضلك ارفع ملف Excel أو CSV من القائمة الجانبية لتبدأ.")
 
 # Logic Processing
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user" and not st.session_state.pending_action:
@@ -199,7 +164,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
         st.session_state.pending_action = reqs
         st.rerun()
 
-# Interactive Action Area
+# Action Area (Dropdowns)
 if st.session_state.pending_action:
     reqs = st.session_state.pending_action
     cols = st.session_state.brain.cols
