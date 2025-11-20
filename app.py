@@ -8,7 +8,7 @@ warnings.filterwarnings('ignore')
 # ==========================================
 # 1. إعدادات الصفحة
 # ==========================================
-st.set_page_config(page_title="المساعد التفاعلي الدقيق", layout="wide", page_icon="🎯")
+st.set_page_config(page_title="المحلل التفاعلي الدقيق", layout="wide", page_icon="🛠️")
 
 st.markdown("""
 <style>
@@ -24,22 +24,20 @@ st.markdown("""
 class InteractiveBrain:
     def __init__(self, df):
         self.df = df
+        # تنظيف أسماء الأعمدة (مسح المسافات الزائدة)
+        self.df.columns = [str(c).strip() for c in self.df.columns]
         self.cols = df.columns.tolist()
 
     def identify_requirements(self, query):
-        """
-        تحديد ماذا يحتاج الذكاء الاصطناعي للإجابة
-        """
         q = query.lower()
         reqs = {
-            'needs_numeric': False, # هل نحتاج عمود أرقام؟
-            'needs_category': False, # هل نحتاج عمود تصنيف (أسماء)؟
-            'needs_date': False,     # هل نحتاج عمود تاريخ؟
-            'operation': 'sum',      # نوع العملية
-            'title': ''              # وصف العملية
+            'needs_numeric': False,
+            'needs_category': False,
+            'needs_date': False,
+            'operation': 'sum',
+            'title': ''
         }
 
-        # 1. تحليل نوع العملية
         if any(x in q for x in ['اكثر', 'اعلى', 'اكبر', 'افضل', 'top', 'max', 'best']):
             reqs['operation'] = 'top'
             reqs['needs_numeric'] = True
@@ -66,9 +64,8 @@ class InteractiveBrain:
         elif any(x in q for x in ['عدد', 'count']):
             reqs['operation'] = 'count'
             reqs['title'] = 'عدد السجلات'
-            # العدد لا يحتاج تحديد أعمدة محددة، يمكن حسابه مباشرة
 
-        else: # الافتراضي: المجموع
+        else:
             reqs['operation'] = 'sum'
             reqs['needs_numeric'] = True
             reqs['title'] = 'الإجمالي'
@@ -76,20 +73,16 @@ class InteractiveBrain:
         return reqs
 
     def calculate(self, reqs, selected_cols):
-        """تنفيذ الحساب بناءً على اختيار المستخدم"""
         df_calc = self.df.copy()
         op = reqs['operation']
         
-        # استخراج الأعمدة المختارة
         num_col = selected_cols.get('numeric')
         cat_col = selected_cols.get('category')
         date_col = selected_cols.get('date')
 
-        # تنظيف الرقم إذا وجد
         if num_col:
             df_calc[num_col] = pd.to_numeric(df_calc[num_col], errors='coerce')
 
-        # تنفيذ العملية
         if op == 'top':
             grouped = df_calc.groupby(cat_col)[num_col].sum().sort_values(ascending=False).head(5)
             best_name = grouped.index[0]
@@ -125,33 +118,53 @@ class InteractiveBrain:
             val = len(df_calc)
             return f"🔢 **عدد الصفوف في الملف:**\n# {val}", None
 
-        return "حدث خطأ غير متوقع", None
+        return "حدث خطأ", None
 
 # ==========================================
-# 3. واجهة المستخدم وإدارة الحالة
+# 3. واجهة المستخدم
 # ==========================================
-st.title("🎯 المحلل الدقيق (أنت تختار، هو يحسب)")
+st.title("🎯 المحلل الدقيق (إصلاح مشاكل الملفات)")
 
-# إدارة الحالة (Session State)
 if 'brain' not in st.session_state: st.session_state.brain = None
 if 'messages' not in st.session_state: st.session_state.messages = []
-if 'pending_action' not in st.session_state: st.session_state.pending_action = None # لتخزين العملية المعلقة
+if 'pending_action' not in st.session_state: st.session_state.pending_action = None
 
 # Sidebar
 with st.sidebar:
-    st.header("1. الملف")
+    st.header("1. رفع الملف")
     uploaded_file = st.file_uploader("Excel/CSV", type=['xlsx', 'csv'])
+    
+    # --- كود قراءة الملف المصفح ضد الأخطاء ---
     if uploaded_file:
         try:
-            if uploaded_file.name.endswith('.csv'): df = pd.read_csv(uploaded_file)
-            else: df = pd.read_excel(uploaded_file)
+            # محاولة قراءة ملف Excel
+            if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
+                df = pd.read_excel(uploaded_file)
             
+            # محاولة قراءة ملف CSV (مع حل مشكلة العربي)
+            elif uploaded_file.name.endswith('.csv'):
+                try:
+                    # المحاولة الأولى: الترميز العالمي
+                    df = pd.read_csv(uploaded_file, encoding='utf-8')
+                except:
+                    try:
+                        # المحاولة الثانية: ترميز الـ CSV العربي (Excel CSV)
+                        uploaded_file.seek(0)
+                        df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+                    except:
+                        # المحاولة الثالثة: ترميز ويندوز العربي القديم
+                        uploaded_file.seek(0)
+                        df = pd.read_csv(uploaded_file, encoding='cp1256')
+            
+            # نجاح القراءة
             if 'brain' not in st.session_state or st.session_state.last_file != uploaded_file.name:
                 st.session_state.brain = InteractiveBrain(df)
                 st.session_state.last_file = uploaded_file.name
-                st.session_state.messages = [{"role": "assistant", "content": "أهلاً! ارفع الملف، واسألني أي سؤال. سأطلب منك تحديد الأعمدة لضمان الدقة."}]
+                st.session_state.messages = [{"role": "assistant", "content": "✅ تم قراءة الملف بنجاح! اسألني أي سؤال."}]
                 st.rerun()
-        except: st.error("خطأ في الملف")
+        
+        except Exception as e:
+            st.error(f"عذراً، هناك مشكلة في قراءة الملف:\n{e}")
 
     if st.button("مسح المحادثة"):
         st.session_state.messages = []
@@ -165,70 +178,49 @@ for msg in st.session_state.messages:
         if "chart" in msg and msg["chart"]:
             st.plotly_chart(msg["chart"], use_container_width=True)
 
-# Input Handling
-if prompt := st.chat_input("اسألني... (مثلاً: أكثر منتج مبيعا)"):
+# Input
+if prompt := st.chat_input("اسألني..."):
     if st.session_state.brain:
-        # 1. عرض سؤال المستخدم
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.rerun()
     else:
         st.warning("ارفع الملف أولاً")
 
-# معالجة الرد (خارج الـ chat input عشان نقدر نعرض أزرار)
+# Logic Handling
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user" and not st.session_state.pending_action:
     last_query = st.session_state.messages[-1]["content"]
-    
-    # تحليل السؤال لمعرفة المطلوب
-    brain = st.session_state.brain
-    reqs = brain.identify_requirements(last_query)
-    
-    # تخزين الحالة لانتظار إدخال المستخدم
+    reqs = st.session_state.brain.identify_requirements(last_query)
     st.session_state.pending_action = reqs
     st.rerun()
 
-# ==========================================
-# منطقة "التفاعل" - هنا يظهر السؤال عن الأعمدة
-# ==========================================
+# Action Area
 if st.session_state.pending_action:
     reqs = st.session_state.pending_action
     cols = st.session_state.brain.cols
     
     with st.chat_message("assistant"):
-        st.markdown(f"🛠️ **لإجابة سؤالك عن ({reqs['title']}) بدقة، يرجى اختيار الأعمدة الصحيحة:**")
+        st.markdown(f"🛠️ **لتحديد ({reqs['title']}) بدقة، اختر الأعمدة:**")
         
-        selected_cols = {}
-        
-        # لو العملية بسيطة (عدد) نحسب علطول
         if reqs['operation'] == 'count':
             msg, fig = st.session_state.brain.calculate(reqs, {})
-            st.markdown(msg)
-            st.session_state.messages.append({"role": "assistant", "content": msg, "chart": fig})
+            st.session_state.messages.append({"role": "assistant", "content": msg})
             st.session_state.pending_action = None
-            # st.rerun() # لا حاجة لـ rerun هنا لتجنب loop
-            
+            st.rerun()
         else:
-            # نعرض قوائم الاختيار (Dropdowns)
             c1, c2 = st.columns(2)
+            sel_cols = {}
             
             with c1:
                 if reqs['needs_category']:
-                    selected_cols['category'] = st.selectbox("اختر عمود الأسماء (مثلاً: المنتج/الفرع):", cols, key="cat_sel")
+                    sel_cols['category'] = st.selectbox("عمود الأسماء (منتج/فرع):", cols)
                 if reqs['needs_date']:
-                    selected_cols['date'] = st.selectbox("اختر عمود التاريخ:", cols, key="date_sel")
-            
+                    sel_cols['date'] = st.selectbox("عمود التاريخ:", cols)
             with c2:
                 if reqs['needs_numeric']:
-                    selected_cols['numeric'] = st.selectbox("اختر عمود الأرقام (مثلاً: المبيعات/السعر):", cols, key="num_sel")
+                    sel_cols['numeric'] = st.selectbox("عمود الأرقام (مبيعات/سعر):", cols)
             
-            if st.button("✅ احسب النتيجة"):
-                # الحساب الفعلي
-                msg, fig = st.session_state.brain.calculate(reqs, selected_cols)
-                
-                # عرض النتيجة
-                st.markdown(msg)
-                if fig: st.plotly_chart(fig, use_container_width=True)
-                
-                # حفظ في السجل وإنهاء التعليق
+            if st.button("احسب"):
+                msg, fig = st.session_state.brain.calculate(reqs, sel_cols)
                 st.session_state.messages.append({"role": "assistant", "content": msg, "chart": fig})
                 st.session_state.pending_action = None
                 st.rerun()
