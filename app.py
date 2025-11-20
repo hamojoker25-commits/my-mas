@@ -4,7 +4,6 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.ensemble import IsolationForest
-from dateutil import parser
 import re
 import warnings
 
@@ -12,223 +11,214 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ==========================================
-# 1. إعدادات الصفحة الاحترافية
+# 1. إعدادات الصفحة وتصميم الواجهة (UI/UX)
 # ==========================================
 st.set_page_config(
     page_title="Enterprise AI Analyst",
     layout="wide",
-    page_icon="🏢",
+    page_icon="🧠",
     initial_sidebar_state="expanded"
 )
 
-# CSS لتحسين شكل الشات ليكون احترافياً
+# تحسين مظهر الشات باستخدام CSS
 st.markdown("""
 <style>
-    .stChatMessage {border-radius: 10px; padding: 10px;}
-    .stChatInput {position: fixed; bottom: 20px;}
+    .stChatInput {
+        position: fixed;
+        bottom: 20px;
+        z-index: 1000;
+    }
+    .block-container {
+        padding-bottom: 100px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. المحرك الإدراكي (Cognitive Engine)
+# 2. المحرك الإدراكي (Auto-Detection Engine)
 # ==========================================
 class AutoIdentifier:
-    """
-    يقوم هذا الكلاس بقراءة الملف وتحديد نوع كل عمود تلقائياً
-    بناءً على الاسم والمحتوى (عربي/إنجليزي)
-    """
     def __init__(self, df):
-        self.df = df
-        self.column_roles = {}
+        self.df = df.copy()
+        self.roles = {
+            'date_col': None,
+            'target_col': None,
+            'cat_cols': []
+        }
         self._detect_roles()
 
     def _detect_roles(self):
-        """خوارزمية تحديد الأدوار"""
+        # 1. تنظيف أسماء الأعمدة
+        self.df.columns = [str(c).strip() for c in self.df.columns]
         cols = self.df.columns
         
-        # قواميس الكلمات المفتاحية (عربي وإنجليزي)
+        # القواميس (عربي/إنجليزي)
         keywords = {
-            'date': ['date', 'time', 'تاريخ', 'وقت', 'زمن', 'يوم', 'شهر', 'day', 'month', 'year'],
-            'money': ['price', 'sales', 'amount', 'total', 'salary', 'revenue', 'profit', 'cost', 'balance', 
-                      'سعر', 'مبيعات', 'مبلغ', 'اجمالي', 'راتب', 'ربح', 'تكلفة', 'رصيد', 'قيمة', 'دخل'],
-            'quantity': ['qty', 'quantity', 'stock', 'count', 'inventory', 'units', 
-                         'كمية', 'عدد', 'مخزون', 'وحدات'],
-            'category': ['category', 'product', 'item', 'name', 'customer', 'employee', 'branch', 'region', 'status', 
-                         'فئة', 'منتج', 'صنف', 'اسم', 'عميل', 'موظف', 'فرع', 'منطقة', 'حالة', 'قسم']
+            'date': ['date', 'time', 'تاريخ', 'وقت', 'زمن', 'يوم', 'شهر'],
+            'money_qty': ['price', 'sales', 'amount', 'total', 'salary', 'revenue', 'profit', 'cost', 'qty', 'stock', 
+                          'سعر', 'مبيعات', 'مبلغ', 'اجمالي', 'راتب', 'ربح', 'تكلفة', 'رصيد', 'قيمة', 'كمية', 'مخزون', 'عدد']
         }
 
-        self.column_roles = {
-            'date_col': None,
-            'target_col': None,  # الهدف الرقمي الرئيسي (مبيعات/راتب)
-            'cat_cols': []       # أعمدة التصنيف
-        }
-
-        # 1. البحث عن التاريخ
+        # A. البحث عن التاريخ
         for col in cols:
-            col_lower = str(col).lower()
-            if any(k in col_lower for k in keywords['date']) or pd.api.types.is_datetime64_any_dtype(self.df[col]):
-                self.column_roles['date_col'] = col
-                # محاولة تحويله لتاريخ فعلي لضمان الدقة
+            # لو العمود أصلاً نوعه تاريخ
+            if pd.api.types.is_datetime64_any_dtype(self.df[col]):
+                self.roles['date_col'] = col
+                break
+            # لو الاسم يوحي بتاريخ، نحاول نحوله
+            if any(k in col.lower() for k in keywords['date']):
                 try:
                     self.df[col] = pd.to_datetime(self.df[col], errors='coerce')
+                    # نتأكد إنه اتحول فعلاً
+                    if pd.api.types.is_datetime64_any_dtype(self.df[col]):
+                        self.roles['date_col'] = col
+                        break
                 except: pass
-                break # نكتفي بأول عمود تاريخ نجده
 
-        # 2. البحث عن الأهداف الرقمية (Target)
+        # B. البحث عن الهدف الرقمي (Target)
         potential_targets = []
         for col in cols:
-            col_lower = str(col).lower()
-            # إذا كان العمود رقمياً
+            # لازم يكون رقمي
             if pd.api.types.is_numeric_dtype(self.df[col]):
-                # نرى هل اسمه يدل على مال أو كمية
                 score = 0
-                if any(k in col_lower for k in keywords['money']): score += 2
-                if any(k in col_lower for k in keywords['quantity']): score += 1
+                if any(k in col.lower() for k in keywords['money_qty']): score += 2
+                # نفضل العمود اللي فيه قيم فريدة كتير (عشان مش يكون ID أو كود)
+                if self.df[col].nunique() > 5: score += 1
                 potential_targets.append((col, score))
         
-        # ترتيب المرشحين واختيار الأقوى
         if potential_targets:
+            # نختار صاحب أعلى سكور
             potential_targets.sort(key=lambda x: x[1], reverse=True)
-            self.column_roles['target_col'] = potential_targets[0][0]
+            self.roles['target_col'] = potential_targets[0][0]
 
-        # 3. البحث عن التصنيفات (Categories)
+        # C. البحث عن التصنيفات (Categories)
         for col in cols:
-            if col == self.column_roles['date_col'] or col == self.column_roles['target_col']:
+            if col == self.roles['date_col'] or col == self.roles['target_col']:
                 continue
-            # إذا كان نصياً وعدد القيم الفريدة معقول (أقل من 500) نعتبره تصنيف
+            # نعتبره تصنيف لو هو نصي وعدد قيمه معقول
             if self.df[col].dtype == 'object' or pd.api.types.is_string_dtype(self.df[col]):
-                if self.df[col].nunique() < 1000: 
-                    self.column_roles['cat_cols'].append(col)
+                if self.df[col].nunique() < 2000: # رقم تقديري
+                    self.roles['cat_cols'].append(col)
 
 # ==========================================
-# 3. العقل المحلل (Analytical Brain)
+# 3. المحلل الذكي (Analytical Brain)
 # ==========================================
-class EnterpriseAI:
+class SmartAnalyst:
     def __init__(self, df, roles):
         self.df = df
         self.roles = roles
-        self.date_col = roles['date_col']
         self.target = roles['target_col']
+        self.date_col = roles['date_col']
         self.cats = roles['cat_cols']
 
-    def detect_anomalies(self):
-        """كشف الأخطاء المؤسسية"""
-        if not self.target: return pd.DataFrame()
-        
-        model = IsolationForest(contamination=0.02, random_state=42)
-        data = self.df[[self.target]].fillna(0)
-        preds = model.fit_predict(data)
-        return self.df[preds == -1]
-
-    def find_smart_filter(self, query):
-        """البحث الدلالي داخل البيانات"""
-        query_words = query.lower().split()
-        filtered_df = self.df.copy()
-        applied_filters = []
-
-        # البحث في كل أعمدة التصنيف
-        for col in self.cats:
-            for word in query_words:
-                clean_word = re.sub(r'[^\w\s]', '', word)
-                if len(clean_word) < 2: continue
-                
-                # هل الكلمة موجودة كقيمة في هذا العمود؟
-                mask = self.df[col].astype(str).str.contains(clean_word, case=False, na=False)
-                if mask.any():
-                    # تأكد أن الكلمة ليست مجرد حرف جر
-                    if clean_word not in ['من', 'في', 'على', 'the', 'in', 'at']:
-                        filtered_df = filtered_df[mask]
-                        applied_filters.append(f"{col}={clean_word}")
-
-        return filtered_df, applied_filters
-
     def process_query(self, query):
-        """معالجة اللغة الطبيعية وفهم النية"""
-        df_filtered, filters = self.find_smart_filter(query)
-        response = ""
-        chart = None
-        
-        # تحديد سياق الحديث (عن من نتحدث؟)
-        context_msg = f" (بناءً على فلتر: {' + '.join(filters)})" if filters else " (على كامل البيانات)"
-        
+        # إذا لم يتم تحديد عمود رقمي، لا يمكن التحليل
         if not self.target:
-            return "عذراً، لم أستطع تحديد عمود رقمي رئيسي (مثل المبيعات أو الرواتب) في الملف تلقائياً. تأكد من صحة الملف.", None
+            return "⚠️ عذراً، لم أستطع تحديد عمود للأرقام (مبيعات/رواتب/كميات) تلقائياً. يرجى التأكد من الملف.", None
 
-        # 1. تحليل النية: المجموع والإجمالي
-        if any(x in query for x in ['اجمالي', 'مجموع', 'total', 'sum', 'حجم', 'قيمة']):
-            val = df_filtered[self.target].sum()
-            response = f"💰 **إجمالي {self.target}** {context_msg}:\n# {val:,.2f}"
-            
-        # 2. تحليل النية: المتوسط
+        query = query.lower()
+        filtered_df = self.df.copy()
+        filters_applied = []
+
+        # 1. البحث والفلترة الذكية
+        for cat in self.cats:
+            # البحث عن قيم العمود داخل سؤال المستخدم
+            unique_vals = self.df[cat].dropna().unique()
+            for val in unique_vals:
+                val_str = str(val).lower()
+                # تنظيف القيمة للبحث
+                if len(val_str) > 1 and val_str in query:
+                    mask = filtered_df[cat].astype(str).str.contains(val_str, case=False, na=False)
+                    if mask.any():
+                        filtered_df = filtered_df[mask]
+                        filters_applied.append(f"{val}")
+                        break # نكتفي بقيمة واحدة من نفس العمود لمنع التضارب
+
+        context = f" (في: {' + '.join(filters_applied)})" if filters_applied else " (الإجمالي)"
+        
+        # 2. فهم نوع السؤال (Intent)
+
+        # --- المجموع / الإجمالي ---
+        if any(x in query for x in ['اجمالي', 'مجموع', 'total', 'sum', 'كم']):
+            val = filtered_df[self.target].sum()
+            return f"💰 **إجمالي {self.target}** {context}:\n# {val:,.2f}", None
+
+        # --- المتوسط ---
         elif any(x in query for x in ['متوسط', 'معدل', 'avg', 'average']):
-            val = df_filtered[self.target].mean()
-            response = f"📊 **متوسط {self.target}** {context_msg}:\n# {val:,.2f}"
+            val = filtered_df[self.target].mean()
+            return f"📊 **متوسط {self.target}** {context}:\n# {val:,.2f}", None
 
-        # 3. تحليل النية: الأفضل/الأعلى
-        elif any(x in query for x in ['افضل', 'اعلى', 'اكثر', 'top', 'best', 'highest', 'max']):
-            # نبحث عن أفضل تصنيف
-            best_col = self.cats[0] if self.cats else None
-            if best_col:
-                grouped = df_filtered.groupby(best_col)[self.target].sum().sort_values(ascending=False).head(5)
-                response = f"🏆 **الأعلى أداءً في {best_col}**:\n"
-                chart = px.bar(grouped, x=grouped.index, y=self.target, title=f"Top 5 {best_col}", color=self.target)
+        # --- الأفضل / الأعلى ---
+        elif any(x in query for x in ['افضل', 'اعلى', 'اكثر', 'top', 'best', 'max']):
+            if self.cats:
+                # نختار أول عمود تصنيف مناسب (أو العمود اللي تم الفلترة عليه لو مفيش غيره)
+                group_col = self.cats[0]
+                # لو المستخدم سأل عن تصنيف محدد (مثلاً "أفضل موظف") نحاول نلاقيه
+                for c in self.cats:
+                    if c.lower() in query:
+                        group_col = c
+                        break
+                
+                top = filtered_df.groupby(group_col)[self.target].sum().sort_values(ascending=False).head(5)
+                fig = px.bar(top, x=top.index, y=self.target, title=f"Top 5 - {group_col}", color=self.target)
+                return f"🏆 **الأعلى أداءً** {context}:", fig
             else:
-                val = df_filtered[self.target].max()
-                response = f"🚀 **أعلى قيمة مسجلة** هي: {val:,.2f}"
+                val = filtered_df[self.target].max()
+                return f"🚀 **أعلى رقم مسجل:** {val:,.2f}", None
 
-        # 4. تحليل النية: التطور الزمني
-        elif any(x in query for x in ['تطور', 'زمن', 'تاريخ', 'trend', 'time', 'date', 'متى']) and self.date_col:
-            # التجميع حسب الشهر أو اليوم
-            df_filtered['Period'] = df_filtered[self.date_col].dt.to_period('M').astype(str)
-            trend = df_filtered.groupby('Period')[self.target].sum().reset_index()
-            response = f"📈 **التحليل الزمني لـ {self.target}**:"
-            chart = px.line(trend, x='Period', y=self.target, markers=True, title="Growth Over Time")
+        # --- التطور الزمني (Time Series) ---
+        elif any(x in query for x in ['تطور', 'زمن', 'تاريخ', 'trend', 'time', 'date']) and self.date_col:
+            # التأكد أن التواريخ مرتبة
+            trend = filtered_df.sort_values(self.date_col)
+            fig = px.line(trend, x=self.date_col, y=self.target, title=f"{self.target} Trend")
+            return f"📈 **التحليل الزمني** {context}:", fig
 
-        # 5. تحليل النية: الأخطاء/الشواذ
-        elif any(x in query for x in ['خطأ', 'مشكلة', 'شاذ', 'anomaly', 'error', 'weird']):
-            anomalies = self.detect_anomalies()
-            count = len(anomalies)
-            if count > 0:
-                response = f"🚨 **تقرير التدقيق الذكي:**\nتم اكتشاف **{count}** عمليات تحتوي على أرقام غير منطقية في عمود {self.target}.\nهذه عينة منها:"
-                chart = go.Figure(data=[go.Table(
-                    header=dict(values=list(anomalies.columns), fill_color='paleturquoise', align='left'),
-                    cells=dict(values=[anomalies[k].tolist() for k in anomalies.columns], align='left'))
-                ])
+        # --- الأخطاء / الشواذ (Anomaly) ---
+        elif any(x in query for x in ['خطأ', 'مشكلة', 'شاذ', 'anomaly', 'error']):
+            model = IsolationForest(contamination=0.01, random_state=42)
+            data_fit = self.df[[self.target]].fillna(0) # نستخدم الداتا الأصلية للكشف الأدق
+            preds = model.fit_predict(data_fit)
+            anomalies = self.df[preds == -1]
+            
+            if not anomalies.empty:
+                fig = go.Figure(data=[go.Table(
+                    header=dict(values=list(anomalies.columns), fill_color='red', font=dict(color='white')),
+                    cells=dict(values=[anomalies[k].tolist() for k in anomalies.columns])
+                )])
+                return f"🚨 **كشف الأخطاء:** وجدت {len(anomalies)} عمليات غير منطقية (شاذة إحصائياً):", fig
             else:
-                response = "✅ قمت بعمل مسح كامل للبيانات ولم أجد أي قيم شاذة إحصائياً."
+                return "✅ البيانات سليمة تماماً، لم أجد أي قيم شاذة.", None
 
-        # 6. تقرير عام (الوضع الافتراضي)
+        # --- تقرير عام ---
         else:
-            total = df_filtered[self.target].sum()
-            count = len(df_filtered)
-            response = f"""
-            🤖 **تحليل فوري {context_msg}:**
-            - **الهدف المحلل:** {self.target}
-            - **عدد السجلات:** {count}
-            - **الإجمالي:** {total:,.2f}
+            val = filtered_df[self.target].sum()
+            count = len(filtered_df)
+            msg = f"""
+            🤖 **تحليل سريع {context}:**
+            - **الهدف:** {self.target}
+            - **عدد العمليات:** {count}
+            - **الإجمالي:** {val:,.2f}
             
-            💡 *أنا تعرفت على الأعمدة تلقائياً. يمكنك سؤالي عن: "تطور المبيعات"، "أفضل موظف"، "هل توجد أخطاء".*
+            💡 *اسألني: "أفضل منتج"، "تطور المبيعات"، "هل توجد أخطاء؟"*
             """
-            
-        return response, chart
+            return msg, None
 
 # ==========================================
-# 4. واجهة المستخدم (UI)
+# 4. الواجهة الرئيسية (Main App Logic)
 # ==========================================
 
-# إدارة الحالة (Session State)
+# إدارة الذاكرة
 if 'df' not in st.session_state: st.session_state.df = None
-if 'ai_brain' not in st.session_state: st.session_state.ai_brain = None
-if 'messages' not in st.session_state: st.session_state.messages = []
+if 'analyst' not in st.session_state: st.session_state.analyst = None
+if 'messages' not in st.session_state: 
+    st.session_state.messages = [{"role": "assistant", "content": "مرحباً! 👋 ارفع ملف البيانات وسأقوم بتحليله فوراً."}]
 
-# العنوان
-st.title("🤖 Enterprise Data AI")
-st.markdown("#### نظام تحليل بيانات الشركات الذكي (Auto-Detect Mode)")
+st.title("🧠 Enterprise AI Analyst")
 
-# الشريط الجانبي للرفع فقط
+# --- Sidebar (File Upload) ---
 with st.sidebar:
-    st.header("📂 مركز البيانات")
-    uploaded_file = st.file_uploader("ارفع الملف واترك الباقي علي (Excel/CSV)", type=['xlsx', 'csv'])
+    st.header("📂 البيانات")
+    uploaded_file = st.file_uploader("ارفع ملف (Excel/CSV)", type=['xlsx', 'csv'])
     
     if uploaded_file and st.session_state.df is None:
         try:
@@ -238,70 +228,65 @@ with st.sidebar:
             else:
                 df = pd.read_excel(uploaded_file)
             
-            # 1. تشغيل المصنف التلقائي
+            # التشغيل التلقائي (Auto-ML)
             identifier = AutoIdentifier(df)
-            roles = identifier.column_roles
             
-            # حفظ في الذاكرة
-            st.session_state.df = df
-            st.session_state.ai_brain = EnterpriseAI(df, roles)
+            # حفظ النتائج
+            st.session_state.df = identifier.df # الداتا بعد تنظيف التواريخ
+            st.session_state.analyst = SmartAnalyst(st.session_state.df, identifier.roles)
             
-            # رسالة ترحيب ذكية
-            detected_msg = f"""
-            **تم تحليل هيكل الملف بنجاح! 🧠**
-            - العمود الرقمي الرئيسي: `{roles['target_col']}`
+            # رسالة ترحيب توضح ما تم اكتشافه
+            roles = identifier.roles
+            welcome_msg = f"""
+            **✅ تم تحليل الملف بنجاح!**
+            - العمود الرقمي (الهدف): `{roles['target_col']}`
             - عمود التاريخ: `{roles['date_col'] if roles['date_col'] else 'غير موجود'}`
-            - عدد أعمدة التصنيف: {len(roles['cat_cols'])}
+            - أعمدة التصنيف: `{len(roles['cat_cols'])}` أعمدة.
+            
+            **أنا جاهز للأسئلة الآن!** 🚀
             """
-            st.session_state.messages.append({"role": "assistant", "content": f"أهلاً بك! {detected_msg}\nأنا جاهز للأسئلة."})
+            st.session_state.messages.append({"role": "assistant", "content": welcome_msg})
             st.rerun()
             
         except Exception as e:
             st.error(f"حدث خطأ في الملف: {e}")
 
-    if st.button("🔄 تصفير المحادثة"):
+    if st.button("🔄 بدء جديد"):
         st.session_state.df = None
-        st.session_state.ai_brain = None
-        st.session_state.messages = []
+        st.session_state.analyst = None
+        st.session_state.messages = [{"role": "assistant", "content": "مرحباً! 👋 ارفع ملف البيانات وسأقوم بتحليله فوراً."}]
         st.rerun()
 
-# منطقة الشات
-if st.session_state.df is not None:
-    # عرض الرسائل السابقة
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-            if "chart" in msg:
-                st.plotly_chart(msg["chart"], use_container_width=True)
+# --- Chat Interface ---
 
-    # استقبال السؤال
-    if prompt := st.chat_input("اسألني عن المبيعات، الموظفين، المخزون، الأخطاء..."):
-        # عرض سؤال المستخدم
+# عرض الرسائل
+for msg in st.session_state.messages:
+    # تحديد الأفاتار (شكل الايقونة)
+    avatar = "🤖" if msg["role"] == "assistant" else "👤"
+    with st.chat_message(msg["role"], avatar=avatar):
+        st.markdown(msg["content"])
+        # عرض الرسم البياني إن وجد
+        if "chart" in msg and msg["chart"]:
+            st.plotly_chart(msg["chart"], use_container_width=True)
+
+# استقبال المدخلات
+if prompt := st.chat_input("اسألني عن بياناتك..."):
+    if st.session_state.analyst:
+        # 1. عرض رسالة المستخدم
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
+        with st.chat_message("user", avatar="👤"):
             st.markdown(prompt)
 
-        # معالجة الرد
-        with st.chat_message("assistant"):
-            with st.spinner("جاري تحليل البيانات المؤسسية..."):
-                brain = st.session_state.ai_brain
-                response_text, chart = brain.process_query(prompt)
+        # 2. معالجة الرد
+        with st.chat_message("assistant", avatar="🤖"):
+            with st.spinner("جاري التحليل..."):
+                response_text, chart = st.session_state.analyst.process_query(prompt)
                 
                 st.markdown(response_text)
                 if chart:
                     st.plotly_chart(chart, use_container_width=True)
                 
-                # حفظ الرد
-                msg_data = {"role": "assistant", "content": response_text}
-                if chart: msg_data["chart"] = chart
-                st.session_state.messages.append(msg_data)
-
-else:
-    # شاشة الترحيب عند فتح الموقع
-    st.info("👋 مرحباً! هذا النظام مصمم للشركات. فقط ارفع ملف (مبيعات، مخزون، HR) وسأقوم بفهمه وتجهيز الردود تلقائياً.")
-    st.markdown("""
-    ### 🚀 قدرات النظام:
-    - **Auto-Detect:** يكتشف الأعمدة العربية والإنجليزية تلقائياً.
-    - **Anomaly Detection:** يكشف الاحتيال والأخطاء.
-    - **Deep Context:** يفهم الفلاتر (مثلاً: "مبيعات قسم الصيانة").
-    """)
+                # حفظ الرد في الذاكرة
+                st.session_state.messages.append({"role": "assistant", "content": response_text, "chart": chart})
+    else:
+        st.error("يرجى رفع ملف البيانات أولاً!")
