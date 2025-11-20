@@ -8,7 +8,7 @@ warnings.filterwarnings('ignore')
 # ==========================================
 # 1. إعدادات الصفحة
 # ==========================================
-st.set_page_config(page_title="المحلل الذكي النهائي", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="المحلل الذكي النهائي", layout="wide", page_icon="🚀")
 
 st.markdown("""
 <style>
@@ -19,13 +19,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. تهيئة الذاكرة (Fixing the Error Here)
+# 2. تهيئة الذاكرة
 # ==========================================
-# هنا الحل: بنتأكد إن كل المتغيرات موجودة قبل ما نستخدمها
 if 'brain' not in st.session_state: st.session_state.brain = None
 if 'messages' not in st.session_state: st.session_state.messages = []
 if 'pending_action' not in st.session_state: st.session_state.pending_action = None
-if 'last_file' not in st.session_state: st.session_state.last_file = None  # <-- ده السطر اللي كان ناقص
+if 'last_file' not in st.session_state: st.session_state.last_file = None
 
 # ==========================================
 # 3. منطق التحليل (Logic Core)
@@ -131,9 +130,9 @@ class InteractiveBrain:
         return "حدث خطأ غير متوقع", None
 
 # ==========================================
-# 4. واجهة المستخدم
+# 4. واجهة المستخدم (مع إصلاح قراءة الملفات)
 # ==========================================
-st.title("🎯 المحلل الذكي (إصلاح الأخطاء)")
+st.title("🎯 المحلل الذكي (النسخة المستقرة)")
 
 # Sidebar - File Upload
 with st.sidebar:
@@ -142,28 +141,34 @@ with st.sidebar:
     
     if uploaded_file:
         try:
-            # منطق قراءة الملف القوي (عربي/إنجليزي)
+            df = None
+            # قراءة Excel
             if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
                 df = pd.read_excel(uploaded_file)
-            elif uploaded_file.name.endswith('.csv'):
-                try:
-                    df = pd.read_csv(uploaded_file, encoding='utf-8')
-                except:
-                    uploaded_file.seek(0)
-                    df = pd.read_csv(uploaded_file, encoding='utf-8-sig') # للعربي أحياناً
-                except:
-                    uploaded_file.seek(0)
-                    df = pd.read_csv(uploaded_file, encoding='cp1256') # ويندوز عربي
             
-            # هنا كان بيحصل الخطأ، دلوقتي صلحناه بوجود last_file في الأول
-            if st.session_state.last_file != uploaded_file.name:
-                st.session_state.brain = InteractiveBrain(df)
-                st.session_state.last_file = uploaded_file.name
-                st.session_state.messages = [{"role": "assistant", "content": "✅ الملف جاهز! اسألني وأنا هطلب منك توضحلي الأعمدة عشان الدقة."}]
-                st.rerun()
-                
+            # قراءة CSV بطريقة ذكية (تجنب خطأ SyntaxError)
+            elif uploaded_file.name.endswith('.csv'):
+                encodings_to_try = ['utf-8', 'utf-8-sig', 'cp1256', 'latin1']
+                for encoding in encodings_to_try:
+                    try:
+                        uploaded_file.seek(0)
+                        df = pd.read_csv(uploaded_file, encoding=encoding)
+                        break # لو نجح، اخرج من اللوب
+                    except Exception:
+                        continue # لو فشل، جرب اللي بعده
+            
+            if df is not None:
+                # نجاح القراءة
+                if st.session_state.last_file != uploaded_file.name:
+                    st.session_state.brain = InteractiveBrain(df)
+                    st.session_state.last_file = uploaded_file.name
+                    st.session_state.messages = [{"role": "assistant", "content": "✅ الملف جاهز! اسألني وأنا هطلب منك توضحلي الأعمدة."}]
+                    st.rerun()
+            else:
+                st.error("فشل قراءة الملف بكل الطرق الممكنة. تأكد أن الملف سليم.")
+
         except Exception as e:
-            st.error(f"مشكلة في الملف: {e}")
+            st.error(f"خطأ غير متوقع: {e}")
 
     if st.button("مسح المحادثة"):
         st.session_state.messages = []
@@ -183,9 +188,9 @@ if prompt := st.chat_input("اسألني... (مثلاً: أكثر عميل اش�
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.rerun()
     else:
-        st.warning("ارفع الملف أولاً")
+        st.warning("ارفع الملف الأول")
 
-# Logic Processing (After Input)
+# Logic Processing
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user" and not st.session_state.pending_action:
     last_query = st.session_state.messages[-1]["content"]
     brain = st.session_state.brain
@@ -200,7 +205,7 @@ if st.session_state.pending_action:
     cols = st.session_state.brain.cols
     
     with st.chat_message("assistant"):
-        st.markdown(f"🛠️ **عشان أحسب ({reqs['title']}) صح، اختارلي الأعمدة:**")
+        st.markdown(f"🛠️ **لتحديد ({reqs['title']}) بدقة، اختر الأعمدة:**")
         
         if reqs['operation'] == 'count':
             msg, fig = st.session_state.brain.calculate(reqs, {})
