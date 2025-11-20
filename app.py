@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import os
 from datetime import datetime, timedelta
 from sklearn.ensemble import IsolationForest
+import plotly.express as px
 import warnings
 
 # تجاهل التحذيرات
@@ -14,72 +14,18 @@ warnings.filterwarnings('ignore')
 # ==========================================
 st.set_page_config(page_title="نظام تحليل المبيعات الذكي AI", layout="wide", page_icon="🤖")
 
-# ==============================================================================
-# 1. إعدادات النظام (Configuration)
-# ==============================================================================
-COLUMN_MAPPING = {
-    'Date': 'Date',
-    'Customer': 'Customer',
-    'Product': 'Product',
-    'Sales': 'Total_Sales',
-    'Status': 'Status',
-    'Profit': 'Profit'
-}
-
-# ==============================================================================
-# 2. الكلاسات (Logic Core) - نفس منطقك القوي
-# ==============================================================================
-class DataProcessor:
-    def __init__(self, uploaded_file=None):
-        self.uploaded_file = uploaded_file
-        self.df = None
-
-    def create_demo_data(self):
-        """إنشاء بيانات وهمية"""
-        np.random.seed(42)
-        num_records = 1000
-        dates = [datetime(2024, 1, 1) + timedelta(days=x) for x in range(365)]
-        
-        data = {
-            'Date': np.random.choice(dates, num_records),
-            'Customer': np.random.choice(['شركة ألفا', 'مؤسسة النور', 'سوبر ماركت الخير', 'Tech Solutions', 'Global Corp'], num_records),
-            'Product': np.random.choice(['Laptop HP', 'Server Dell', 'Software License', 'Maintenance', 'Mouse'], num_records),
-            'Total_Sales': np.random.randint(100, 5000, num_records),
-            'Status': np.random.choice(['Won', 'Lost'], num_records, p=[0.8, 0.2])
-        }
-        df = pd.DataFrame(data)
-        # إضافة قيم شاذة
-        df.loc[990] = [datetime(2024, 6, 1), 'Client X', 'Laptop HP', 150000, 'Won'] 
-        return df
-
-    def load_data(self):
-        if self.uploaded_file is None:
-            self.df = self.create_demo_data()
-            return self.df, "demo"
-        else:
-            try:
-                if self.uploaded_file.name.endswith('.csv'):
-                    self.df = pd.read_csv(self.uploaded_file)
-                else:
-                    self.df = pd.read_excel(self.uploaded_file)
-                
-                inv_map = {v: k for k, v in COLUMN_MAPPING.items() if v in self.df.columns}
-                self.df.rename(columns=inv_map, inplace=True)
-                
-                self.df['Date'] = pd.to_datetime(self.df['Date'])
-                
-                if 'Profit' not in self.df.columns and 'Sales' in self.df.columns:
-                    self.df['Profit'] = self.df['Sales'] * 0.20
-                
-                return self.df, "uploaded"
-            except Exception as e:
-                st.error(f"خطأ في قراءة الملف: {e}")
-                return None, "error"
+# ==========================================
+# الكلاسات (Logic Core)
+# ==========================================
 
 class AnalyticsEngine:
     def __init__(self, df):
         self.df = df
-        self.df_won = df[df['Status'] == 'Won'] if 'Status' in df.columns else df
+        # التعامل مع عمود الحالة إذا وجد، وإلا اعتبار الكل "Won"
+        if 'Status' in df.columns:
+            self.df_won = df[df['Status'] == 'Won']
+        else:
+            self.df_won = df
 
     def get_kpis(self):
         revenue = self.df_won['Sales'].sum()
@@ -96,14 +42,14 @@ class AnalyticsEngine:
             'Date': lambda x: (last_date - x.max()).days,
             'Sales': 'sum'
         }).rename(columns={'Date': 'Days_Since_Last_Buy', 'Sales': 'Total_Spend'})
-        return rfm.sort_values('Total_Spend', ascending=False).head(3)
+        return rfm.sort_values('Total_Spend', ascending=False).head(5)
 
 class AIEngine:
     def __init__(self, df):
         self.df = df
 
     def detect_anomalies(self):
-        if 'Sales' not in self.df.columns: return pd.DataFrame()
+        # التأكد من خلو البيانات من القيم الفارغة قبل الذكاء الاصطناعي
         features = self.df[['Sales']].fillna(0)
         if 'Profit' in self.df.columns:
             features = self.df[['Sales', 'Profit']].fillna(0)
@@ -116,35 +62,108 @@ class AIEngine:
         last_date = self.df['Date'].max()
         customers = self.df.groupby('Customer')['Date'].max().reset_index()
         customers['Days_Inactive'] = (last_date - customers['Date']).dt.days
-        return customers[customers['Days_Inactive'] > 90].sort_values('Days_Inactive', ascending=False).head(5)
+        # العميل خطر لو بقاله اكتر من 90 يوم ما اشترى
+        return customers[customers['Days_Inactive'] > 90].sort_values('Days_Inactive', ascending=False).head(10)
 
-# ==============================================================================
-# 3. واجهة التطبيق (Streamlit Interface)
-# ==============================================================================
+# ==========================================
+# واجهة التطبيق والمنطق الرئيسي
+# ==========================================
 
 st.title("🤖 نظام تحليل المبيعات الذكي المتكامل")
 st.markdown("---")
 
-# الشريط الجانبي للتحميل
+# 1. التحميل
 st.sidebar.header("📂 البيانات")
 uploaded_file = st.sidebar.file_uploader("ارفع ملف المبيعات (Excel/CSV)", type=['xlsx', 'csv'])
 
-# زر لاستخدام بيانات تجريبية
-use_demo = st.sidebar.checkbox("استخدام بيانات تجريبية (Demo)", value=True if not uploaded_file else False)
+df = None
 
-# منطق التحميل
-processor = DataProcessor(uploaded_file if not use_demo else None)
-df, status = processor.load_data()
+# دالة لإنشاء بيانات تجريبية لو مفيش ملف
+def load_demo_data():
+    np.random.seed(42)
+    dates = [datetime(2024, 1, 1) + timedelta(days=x) for x in range(365)]
+    data = {
+        'Date': np.random.choice(dates, 1000),
+        'Customer': np.random.choice(['Client A', 'Client B', 'Client C', 'Client D'], 1000),
+        'Product': np.random.choice(['Product X', 'Product Y', 'Product Z'], 1000),
+        'Sales': np.random.randint(100, 5000, 1000),
+        'Profit': np.random.randint(10, 1000, 1000),
+        'Status': np.random.choice(['Won', 'Won', 'Lost'], 1000)
+    }
+    return pd.DataFrame(data)
 
+if uploaded_file:
+    try:
+        if uploaded_file.name.endswith('.csv'):
+            raw_df = pd.read_csv(uploaded_file)
+        else:
+            raw_df = pd.read_excel(uploaded_file)
+        
+        st.sidebar.success("تم رفع الملف! يرجى تحديد الأعمدة 👇")
+        
+        # 2. تعيين الأعمدة (Mapping) - هذا هو الجزء الذي يحل المشكلة
+        st.sidebar.markdown("### 🔗 ربط الأعمدة")
+        st.sidebar.info("اختر العمود المناسب من ملفك لكل خانة:")
+        
+        cols = raw_df.columns.tolist()
+        
+        col_date = st.sidebar.selectbox("عمود التاريخ (Date)", cols, index=0)
+        col_customer = st.sidebar.selectbox("عمود العميل (Customer)", cols, index=min(1, len(cols)-1))
+        col_product = st.sidebar.selectbox("عمود المنتج (Product)", cols, index=min(2, len(cols)-1))
+        col_sales = st.sidebar.selectbox("عمود المبيعات/المبلغ (Sales)", cols, index=min(3, len(cols)-1))
+        
+        # أعمدة اختيارية
+        has_profit = st.sidebar.checkbox("لدي عمود للأرباح")
+        col_profit = None
+        if has_profit:
+            col_profit = st.sidebar.selectbox("عمود الأرباح (Profit)", cols)
+            
+        has_status = st.sidebar.checkbox("لدي عمود لحالة الصفقة (Won/Lost)")
+        col_status = None
+        if has_status:
+            col_status = st.sidebar.selectbox("عمود الحالة (Status)", cols)
+
+        # زر التطبيق
+        if st.sidebar.button("تحليل البيانات"):
+            # إعادة تسمية الأعمدة لأسماء قياسية يفهمها الكود
+            df = raw_df.copy()
+            rename_map = {
+                col_date: 'Date',
+                col_customer: 'Customer',
+                col_product: 'Product',
+                col_sales: 'Sales'
+            }
+            if has_profit and col_profit:
+                rename_map[col_profit] = 'Profit'
+            if has_status and col_status:
+                rename_map[col_status] = 'Status'
+            
+            df.rename(columns=rename_map, inplace=True)
+            
+            # تنظيف وتجهيز البيانات
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            df['Sales'] = pd.to_numeric(df['Sales'], errors='coerce')
+            
+            if 'Profit' not in df.columns:
+                df['Profit'] = df['Sales'] * 0.20 # افتراض ربح 20% لو مش موجود
+            else:
+                df['Profit'] = pd.to_numeric(df['Profit'], errors='coerce')
+
+            df.dropna(subset=['Date', 'Sales'], inplace=True)
+            
+    except Exception as e:
+        st.error(f"حدث خطأ في قراءة الملف: {e}")
+
+else:
+    # تشغيل Demo Mode
+    if st.sidebar.checkbox("استخدام بيانات تجريبية", value=True):
+        df = load_demo_data()
+        st.sidebar.info("يعمل الآن على بيانات تجريبية.")
+
+# 3. المحركات والواجهة (فقط لو الداتا جاهزة)
 if df is not None:
     analytics = AnalyticsEngine(df)
     ai = AIEngine(df)
-
-    # عرض رسالة الحالة
-    if status == "demo":
-        st.warning("⚠️ يتم العمل الآن على بيانات تجريبية وهمية.")
-    else:
-        st.success("✅ تم تحميل بياناتك بنجاح.")
 
     # --------------------------------------------
     # لوحة المعلومات (Dashboard)
@@ -152,10 +171,10 @@ if df is not None:
     st.subheader("📊 نظرة عامة (KPIs)")
     rev, prof, avg = analytics.get_kpis()
     
-    col1, col2, col3 = st.columns(3)
-    col1.metric("إجمالي الإيرادات", f"${rev:,.0f}")
-    col2.metric("إجمالي الأرباح", f"${prof:,.0f}")
-    col3.metric("متوسط الصفقة", f"${avg:,.0f}")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("إجمالي الإيرادات", f"${rev:,.0f}")
+    c2.metric("إجمالي الأرباح", f"${prof:,.0f}")
+    c3.metric("متوسط الصفقة", f"${avg:,.0f}")
 
     # --------------------------------------------
     # الذكاء الاصطناعي (AI Insights)
@@ -166,11 +185,11 @@ if df is not None:
     tab1, tab2, tab3 = st.tabs(["🚨 كشف الأخطاء (Anomalies)", "⚠️ خطر الانسحاب (Churn)", "🏆 أفضل العملاء"])
     
     with tab1:
-        st.write("يقوم الذكاء الاصطناعي بالبحث عن أرقام مريبة أو غير منطقية:")
+        st.write("يقوم الذكاء الاصطناعي بالبحث عن عمليات بيع غير منطقية:")
         anomalies = ai.detect_anomalies()
         if not anomalies.empty:
             st.error(f"تم اكتشاف {len(anomalies)} عملية مشبوهة!")
-            st.dataframe(anomalies[['Date', 'Customer', 'Sales', 'Profit']])
+            st.dataframe(anomalies)
         else:
             st.success("البيانات سليمة، لم يتم اكتشاف شواذ.")
 
@@ -183,53 +202,34 @@ if df is not None:
             st.info("لا يوجد عملاء في دائرة الخطر.")
 
     with tab3:
-        st.write("أفضل العملاء (VIP) بناءً على الإنفاق والحداثة:")
+        st.write("أفضل العملاء (VIP) بناءً على إجمالي الإنفاق:")
         st.dataframe(analytics.get_rfm_segments())
 
     # --------------------------------------------
     # الشات بوت (Chatbot Interaction)
     # --------------------------------------------
     st.markdown("---")
-    st.subheader("💬 اسأل النظام (AI Chatbot)")
+    st.subheader("💬 المساعد الذكي (AI Assistant)")
     
-    user_query = st.text_input("اكتب سؤالك هنا (مثلاً: ما هو أفضل منتج؟، هل هناك أخطاء؟، تقرير):")
+    user_query = st.text_input("اسأل النظام عن البيانات (مثلاً: أفضل منتج، هل هناك مشاكل، تقرير):")
     
     if user_query:
-        query = user_query.lower()
-        response = ""
-        
-        if "مبيعات" in query or "ايراد" in query:
-            response = f"💰 إجمالي الإيرادات: ${rev:,.2f}"
-        elif "منتج" in query or "افضل" in query:
-            top = analytics.get_top_products()
-            st.bar_chart(top)
-            response = "تم عرض رسم بياني لأفضل المنتجات."
-        elif "عميل" in query or "vip" in query:
-            vip = analytics.get_rfm_segments()
-            st.table(vip)
-            response = "هذه قائمة بأفضل عملائك."
-        elif "خطر" in query or "انسحاب" in query:
-            risk = ai.predict_churn_risk()
-            st.dataframe(risk)
-            response = "هؤلاء العملاء معرضون لخطر الانسحاب."
-        elif "خطأ" in query or "مشكلة" in query:
-            anomalies = ai.detect_anomalies()
-            if not anomalies.empty:
-                st.dataframe(anomalies)
-                response = "تم العثور على هذه العمليات الشاذة."
-            else:
-                response = "✅ البيانات نظيفة تماماً."
-        elif "تقرير" in query:
-            response = f"""
-            📊 **تقرير سريع:**
-            - المبيعات: ${rev:,.0f}
-            - الأرباح: ${prof:,.0f}
-            - عدد العمليات: {len(df)}
-            """
+        q = user_query.lower()
+        if "مبيعات" in q or "ايراد" in q:
+            st.info(f"💰 إجمالي الإيرادات هو: ${rev:,.2f}")
+        elif "منتج" in q:
+            st.bar_chart(analytics.get_top_products())
+        elif "عميل" in q:
+            st.write("أهم العملاء:")
+            st.table(analytics.get_rfm_segments())
+        elif "خطر" in q or "مشكلة" in q or "خطأ" in q:
+            anoms = len(ai.detect_anomalies())
+            risk_count = len(ai.predict_churn_risk())
+            st.warning(f"تم اكتشاف {anoms} عمليات شاذة، و {risk_count} عملاء معرضين للخطر.")
+        elif "تقرير" in q:
+            st.success(f"تقرير سريع:\n- المبيعات: {rev:,.0f}\n- الأرباح: {prof:,.0f}\n- متوسط الصفقة: {avg:,.0f}")
         else:
-            response = "🤔 لم أفهم السؤال بدقة. جرب أن تسأل عن: المبيعات، أفضل منتج، الأخطاء."
-            
-        st.info(response)
+            st.write("🤖 أنا مساعد لتحليل البيانات، اسألني عن المبيعات أو العملاء.")
 
 else:
-    st.info("الرجاء رفع ملف بيانات للبدء.")
+    st.info("👈 يرجى رفع ملف وتحديد الأعمدة من القائمة الجانبية، أو تفعيل البيانات التجريبية.")
