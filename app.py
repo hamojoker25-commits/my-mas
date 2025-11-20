@@ -1,324 +1,242 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import IsolationForest
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
 import plotly.express as px
-import plotly.graph_objects as go
+from sklearn.ensemble import IsolationForest
 from datetime import datetime
-import warnings
-
-# تجاهل التحذيرات
-warnings.filterwarnings('ignore')
+import re
 
 # ==========================================
-# 1. إعداد الصفحة
+# 1. إعداد الصفحة (Page Config)
 # ==========================================
 st.set_page_config(
-    page_title="نظام المحلل الذكي الشامل AI", 
-    layout="wide", 
-    page_icon="🤖"
+    page_title="المحلل الذكي الشامل (Super AI)",
+    layout="wide",
+    page_icon="🧠"
 )
 
 # ==========================================
-# 2. إدارة الذاكرة (Session State) - حل مشكلة نسيان الملف
+# 2. محرك الذكاء الاصطناعي المنطقي (AI Logic Brain)
 # ==========================================
-if 'data' not in st.session_state:
-    st.session_state.data = None
-if 'analysis_done' not in st.session_state:
-    st.session_state.analysis_done = False
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = []
-
-# ==========================================
-# 3. كلاسات الذكاء الاصطناعي (AI Core)
-# ==========================================
-class AIEngine:
-    def __init__(self, df):
+class SmartDataAgent:
+    def __init__(self, df, col_config):
         self.df = df
+        self.cfg = col_config
+        # تحويل كل النصوص لأحرف صغيرة لتسهيل البحث
+        self.df_searchable = df.astype(str).apply(lambda x: x.str.lower())
+
+    def find_filter_in_query(self, query):
+        """
+        هذه الدالة تبحث بذكاء عن أي كلمة في سؤال المستخدم 
+        موجودة بالفعل داخل الداتا (مثل اسم موظف، اسم منتج)
+        """
+        query_words = query.lower().split()
+        filters = {}
+        
+        # البحث في الأعمدة النصية عن قيم تطابق كلمات السؤال
+        for col in self.df.select_dtypes(include=['object', 'string']).columns:
+            for word in query_words:
+                # تنظيف الكلمة
+                clean_word = re.sub(r'[^\w\s]', '', word)
+                if len(clean_word) < 2: continue
+                
+                # هل الكلمة موجودة في هذا العمود؟
+                matches = self.df[self.df[col].astype(str).str.contains(clean_word, case=False, na=False)]
+                if not matches.empty:
+                    # تم العثور على فلتر محتمل
+                    filters[col] = clean_word
+        return filters
 
     def detect_anomalies(self):
-        """كشف القيم الشاذة باستخدام Isolation Forest"""
-        try:
-            # نستخدم المبيعات والأرباح للكشف
-            features = self.df[['Sales', 'Profit']].fillna(0)
-            model = IsolationForest(contamination=0.02, random_state=42)
-            self.df['Is_Anomaly'] = model.fit_predict(features)
-            anomalies = self.df[self.df['Is_Anomaly'] == -1]
-            return anomalies
-        except:
-            return pd.DataFrame()
-
-    def segment_customers(self):
-        """تصنيف العملاء باستخدام K-Means Clustering"""
-        try:
-            # تجميع البيانات حسب العميل
-            customer_data = self.df.groupby('Customer').agg({
-                'Sales': 'sum',
-                'Date': 'max' # للحداثة
-            }).reset_index()
-            
-            # تجهيز البيانات
-            X = customer_data[['Sales']]
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X)
-            
-            # تطبيق التقسيم لـ 3 فئات
-            kmeans = KMeans(n_clusters=3, random_state=42)
-            customer_data['Cluster'] = kmeans.fit_predict(X_scaled)
-            
-            # تسمية الفئات بناء على متوسط الإنفاق
-            cluster_avg = customer_data.groupby('Cluster')['Sales'].mean().sort_values()
-            mapping = {
-                cluster_avg.index[0]: 'عميل عادي (Bronze)',
-                cluster_avg.index[1]: 'عميل مميز (Silver)',
-                cluster_avg.index[2]: 'عميل VIP (Gold)'
-            }
-            customer_data['Segment'] = customer_data['Cluster'].map(mapping)
-            return customer_data
-        except:
-            return pd.DataFrame()
-
-    def generate_report(self):
-        """توليد تقرير نصي ذكي"""
-        total_sales = self.df['Sales'].sum()
-        total_profit = self.df['Profit'].sum()
-        top_product = self.df.groupby('Product')['Sales'].sum().idxmax()
-        anomalies_count = len(self.detect_anomalies())
+        """كشف القيم الشاذة إحصائياً"""
+        target_col = self.cfg.get('target')
+        if not target_col: return None
         
-        report = f"""
-        📊 **التقرير التحليلي الذكي:**
-        - **الأداء المالي:** حققت الشركة مبيعات إجمالية قدرها {total_sales:,.2f} وأرباحاً {total_profit:,.2f}.
-        - **المنتج النجم:** المنتج الأكثر مبيعاً هو "{top_product}".
-        - **جودة البيانات:** قام الذكاء الاصطناعي بفحص العمليات ووجد ({anomalies_count}) عملية تبدو غير طبيعية (شاذة).
-        - **التوصية:** يرجى مراجعة قسم "اكتشاف الأخطاء" للتأكد من سلامة العمليات الكبيرة.
+        model = IsolationForest(contamination=0.02, random_state=42)
+        data_to_fit = self.df[[target_col]].fillna(0)
+        preds = model.fit_predict(data_to_fit)
+        return self.df[preds == -1]
+
+    def analyze_query(self, query):
         """
-        return report
+        المخ الرئيسي: يحلل السؤال ويقرر الإجابة والرسم البياني
+        """
+        query = query.lower()
+        target_col = self.cfg.get('target') # العمود الرقمي (مبيعات/مخزون/راتب)
+        cat_col = self.cfg.get('category')  # عمود التصنيف (منتج/موظف/فرع)
+        date_col = self.cfg.get('date')     # عمود التاريخ
+        
+        response_text = ""
+        chart = None
+        
+        # 1. البحث عن فلاتر (هل المستخدم يسأل عن شيء محدد؟)
+        active_filters = self.find_filter_in_query(query)
+        filtered_df = self.df.copy()
+        filter_desc = ""
+        
+        for col, val in active_filters.items():
+            filtered_df = filtered_df[filtered_df[col].astype(str).str.contains(val, case=False, na=False)]
+            filter_desc += f" (الخاصة بـ {val})"
+
+        # 2. تحليل النية (Intent Analysis)
+        
+        # --- كشف الأخطاء ---
+        if any(w in query for w in ['خطأ', 'مشكلة', 'غريب', 'شاذ', 'anomalies', 'error']):
+            anomalies = self.detect_anomalies()
+            if anomalies is not None and not anomalies.empty:
+                response_text = f"🚨 **تحذير ذكي:** قمت بفحص البيانات ووجدت {len(anomalies)} سجلات تحتوي على أرقام غير منطقية (شاذة إحصائياً) في عمود '{target_col}'.\n\nهذه عينة منها:"
+                return response_text, anomalies.head()
+            else:
+                return "✅ قمت بفحص البيانات بخوارزميات الذكاء الاصطناعي ولم أجد أي قيم شاذة أو أخطاء واضحة.", None
+
+        # --- المجموع والإجماليات ---
+        if any(w in query for w in ['اجمالي', 'مجموع', 'total', 'sum', 'كم']):
+            total = filtered_df[target_col].sum()
+            response_text = f"💰 **الإجمالي{filter_desc}:**\n# {total:,.2f}"
+            
+        # --- المتوسط ---
+        elif any(w in query for w in ['متوسط', 'معدل', 'average', 'avg']):
+            avg = filtered_df[target_col].mean()
+            response_text = f"📊 **المتوسط{filter_desc}:**\n# {avg:,.2f}"
+            
+        # --- الأفضل / الأعلى ---
+        elif any(w in query for w in ['افضل', 'احسن', 'اعلى', 'اكثر', 'top', 'best', 'max']):
+            if cat_col:
+                best = filtered_df.groupby(cat_col)[target_col].sum().sort_values(ascending=False).head(5)
+                response_text = f"🏆 **الأعلى أداءً{filter_desc}:**"
+                # رسم بياني تلقائي
+                chart = px.bar(best, x=best.index, y=target_col, title=f"الأفضل في {cat_col}", color=target_col)
+            else:
+                max_val = filtered_df[target_col].max()
+                response_text = f"🚀 **أعلى قيمة مسجلة:** {max_val:,.2f}"
+
+        # --- الأقل / الأسوأ ---
+        elif any(w in query for w in ['اسوا', 'اقل', 'lowest', 'min']):
+            if cat_col:
+                worst = filtered_df.groupby(cat_col)[target_col].sum().sort_values().head(5)
+                response_text = f"📉 **الأقل أداءً{filter_desc}:**"
+                chart = px.bar(worst, x=worst.index, y=target_col, title=f"الأقل في {cat_col}", color_discrete_sequence=['red'])
+            else:
+                min_val = filtered_df[target_col].min()
+                response_text = f"⬇️ **أقل قيمة مسجلة:** {min_val:,.2f}"
+                
+        # --- تحليل زمني (تريند) ---
+        elif any(w in query for w in ['زمن', 'وقت', 'تطور', 'تاريخ', 'trend', 'time']) and date_col:
+            trend = filtered_df.groupby(date_col)[target_col].sum().reset_index()
+            response_text = f"📈 **التحليل الزمني{filter_desc}:** انظر للرسم البياني أدناه لتتبع التطور."
+            chart = px.line(trend, x=date_col, y=target_col, title="تطور الأداء عبر الزمن")
+
+        # --- توزيع / نسب ---
+        elif any(w in query for w in ['توزيع', 'نسبة', 'pie', 'dist']):
+            if cat_col:
+                response_text = "بناءً على طلبك، هذا هو توزيع البيانات:"
+                chart = px.pie(filtered_df, names=cat_col, values=target_col, title=f"توزيع {target_col} حسب {cat_col}")
+
+        # --- سؤال عام أو تقرير ---
+        else:
+            # Default Report
+            total = filtered_df[target_col].sum()
+            count = len(filtered_df)
+            response_text = f"""
+            🤖 **تحليل سريع{filter_desc}:**
+            - عدد السجلات التي تم تحليلها: {count}
+            - الإجمالي: {total:,.2f}
+            
+            💡 *جرب أن تسألني عن: "أفضل منتج"، "المبيعات في القاهرة"، "هل هناك أخطاء"، "تطور المبيعات".*
+            """
+
+        return response_text, chart
 
 # ==========================================
-# 4. الواجهة الجانبية (Sidebar)
+# 3. واجهة المستخدم (الذاكرة والرفع)
 # ==========================================
-st.sidebar.title("📂 مركز البيانات")
 
-# السماح برفع ملف جديد فقط إذا لم يتم التحليل أو إذا أراد المستخدم التغيير
-uploaded_file = st.sidebar.file_uploader("1. ارفع ملف البيانات (Excel/CSV)", type=['xlsx', 'csv'])
+# تهيئة الذاكرة (Session State)
+if 'df' not in st.session_state: st.session_state.df = None
+if 'chat_history' not in st.session_state: st.session_state.chat_history = []
+if 'col_config' not in st.session_state: st.session_state.col_config = {}
 
-if uploaded_file:
-    # قراءة الملف مبدئياً لاستخراج الأعمدة
+# القائمة الجانبية: الإعداد لمرة واحدة فقط
+st.sidebar.title("⚙️ إعدادات المحرك")
+uploaded_file = st.sidebar.file_uploader("1. ارفع الملف (Excel/CSV)", type=['xlsx', 'csv', 'xls'])
+
+if uploaded_file and st.session_state.df is None:
     try:
         if uploaded_file.name.endswith('.csv'):
-            raw_df = pd.read_csv(uploaded_file)
+            df = pd.read_csv(uploaded_file)
         else:
-            raw_df = pd.read_excel(uploaded_file)
+            df = pd.read_excel(uploaded_file)
         
-        st.sidebar.success("تم قراءة الملف!")
-        
-        # واجهة اختيار الأعمدة (Mapping)
-        st.sidebar.markdown("### 2. حدد الأعمدة")
-        cols = raw_df.columns.tolist()
-        
-        col_date = st.sidebar.selectbox("عمود التاريخ", cols, index=0)
-        col_customer = st.sidebar.selectbox("عمود العميل", cols, index=min(1, len(cols)-1))
-        col_product = st.sidebar.selectbox("عمود المنتج", cols, index=min(2, len(cols)-1))
-        col_sales = st.sidebar.selectbox("عمود المبيعات", cols, index=min(3, len(cols)-1))
-        col_profit = st.sidebar.selectbox("عمود الأرباح (اختياري)", ["لا يوجد"] + cols)
-
-        # زر البدء والحفظ في Session State
-        if st.sidebar.button("🚀 بدء التحليل الذكي"):
-            # تجهيز البيانات
-            df_clean = raw_df.copy()
-            rename_map = {
-                col_date: 'Date',
-                col_customer: 'Customer',
-                col_product: 'Product',
-                col_sales: 'Sales'
-            }
-            if col_profit != "لا يوجد":
-                rename_map[col_profit] = 'Profit'
-            
-            df_clean.rename(columns=rename_map, inplace=True)
-            
-            # تنظيف الأنواع
-            df_clean['Date'] = pd.to_datetime(df_clean['Date'], errors='coerce')
-            df_clean['Sales'] = pd.to_numeric(df_clean['Sales'], errors='coerce')
-            
-            if 'Profit' not in df_clean.columns:
-                df_clean['Profit'] = df_clean['Sales'] * 0.20 # تقدير ربح افتراضي
-            else:
-                df_clean['Profit'] = pd.to_numeric(df_clean['Profit'], errors='coerce')
-            
-            df_clean.dropna(subset=['Date', 'Sales'], inplace=True)
-            
-            # حفظ في الذاكرة الدائمة للجلسة
-            st.session_state.data = df_clean
-            st.session_state.analysis_done = True
-            st.rerun() # إعادة تحميل الصفحة لتحديث الواجهة
-
+        st.session_state.df = df
+        st.sidebar.success("تم رفع الملف بنجاح!")
     except Exception as e:
-        st.sidebar.error(f"خطأ في الملف: {e}")
+        st.sidebar.error(f"خطأ: {e}")
 
-# زر مسح البيانات لبدء جديد
-if st.session_state.analysis_done:
-    if st.sidebar.button("🔄 إعادة ضبط النظام"):
-        st.session_state.data = None
-        st.session_state.analysis_done = False
+# إعداد الأعمدة (Mapping)
+if st.session_state.df is not None:
+    df = st.session_state.df
+    cols = df.columns.tolist()
+    
+    st.sidebar.markdown("### 2. عرفني على البيانات")
+    st.sidebar.info("عشان الذكاء الاصطناعي يفهم ملفك، اختار الأعمدة دي:")
+    
+    target = st.sidebar.selectbox("العمود الرقمي (الهدف)", cols, help="المبيعات، المخزون، الراتب، العدد...")
+    category = st.sidebar.selectbox("عمود التصنيف", ["لا يوجد"] + cols, help="المنتج، الموظف، الفرع، المنطقة...")
+    date_col = st.sidebar.selectbox("عمود التاريخ (اختياري)", ["لا يوجد"] + cols)
+    
+    if st.sidebar.button("💾 حفظ الإعدادات وبدء الشات"):
+        st.session_state.col_config = {
+            'target': target,
+            'category': category if category != "لا يوجد" else None,
+            'date': date_col if date_col != "لا يوجد" else None
+        }
+        # تنظيف البيانات حسب الاختيار
+        df[target] = pd.to_numeric(df[target], errors='coerce')
+        if date_col != "لا يوجد":
+            df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+        
+        st.session_state.df = df
+        st.session_state.chat_history.append({"role": "assistant", "content": "أهلاً! أنا جاهز. البيانات معايا والإعدادات تمام. اسألني عن أي حاجة في ملفك! 🧠"})
         st.rerun()
 
+# زر تصفير النظام
+if st.sidebar.button("🔄 تصفير وبدء جديد"):
+    st.session_state.clear()
+    st.rerun()
+
 # ==========================================
-# 5. الواجهة الرئيسية (Main Dashboard)
+# 4. منطقة الشات (Main Chat Area)
 # ==========================================
-st.title("🤖 نظام المحلل المالي الذكي")
-st.markdown("---")
+st.title("🧠 المحلل الذكي (Data AI)")
 
-# التحقق هل البيانات موجودة في الذاكرة أم لا
-if st.session_state.analysis_done and st.session_state.data is not None:
-    df = st.session_state.data
-    ai_engine = AIEngine(df)
-    
-    # التبويبات الرئيسية
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 لوحة القيادة (Analytics)", 
-        "🧠 الذكاء الاصطناعي (AI Core)", 
-        "🚨 كشف الأخطاء (Errors)",
-        "💬 المساعد الذكي (AI Chat)"
-    ])
-
-    # -------------------------------
-    # Tab 1: التحليلات العامة
-    # -------------------------------
-    with tab1:
-        # KPIs
-        tot_sales = df['Sales'].sum()
-        tot_profit = df['Profit'].sum()
-        count = len(df)
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("إجمالي المبيعات", f"${tot_sales:,.0f}")
-        c2.metric("إجمالي الأرباح", f"${tot_profit:,.0f}")
-        c3.metric("عدد العمليات", count)
-        
-        col_graph1, col_graph2 = st.columns(2)
-        
-        with col_graph1:
-            st.subheader("📈 المبيعات عبر الزمن")
-            daily_sales = df.groupby('Date')['Sales'].sum().reset_index()
-            fig_line = px.line(daily_sales, x='Date', y='Sales', title='اتجاه المبيعات')
-            st.plotly_chart(fig_line, use_container_width=True)
-            
-        with col_graph2:
-            st.subheader("🏆 أفضل المنتجات")
-            top_prod = df.groupby('Product')['Sales'].sum().nlargest(5).reset_index()
-            fig_bar = px.bar(top_prod, x='Product', y='Sales', color='Sales', title='أعلى 5 منتجات مبيعاً')
-            st.plotly_chart(fig_bar, use_container_width=True)
-
-    # -------------------------------
-    # Tab 2: الذكاء الاصطناعي (تصنيف العملاء)
-    # -------------------------------
-    with tab2:
-        st.subheader("🧠 تقسيم العملاء الذكي (AI Segmentation)")
-        st.info("يستخدم النظام خوارزمية K-Means لتقسيم العملاء بناءً على سلوكهم الشرائي.")
-        
-        segmented_df = ai_engine.segment_customers()
-        
-        if not segmented_df.empty:
-            col_a, col_b = st.columns([2, 1])
-            
-            with col_a:
-                fig_scatter = px.scatter(
-                    segmented_df, x='Customer', y='Sales', 
-                    color='Segment', size='Sales',
-                    title="توزيع العملاء (الذهبي، الفضي، البرونزي)",
-                    color_discrete_map={'عميل VIP (Gold)': 'gold', 'عميل مميز (Silver)': 'silver', 'عميل عادي (Bronze)': '#cd7f32'}
-                )
-                st.plotly_chart(fig_scatter, use_container_width=True)
-            
-            with col_b:
-                st.write("📋 **قائمة كبار العملاء (VIP):**")
-                vip_list = segmented_df[segmented_df['Segment'] == 'عميل VIP (Gold)'].sort_values('Sales', ascending=False).head(10)
-                st.dataframe(vip_list[['Customer', 'Sales']])
-        else:
-            st.warning("البيانات غير كافية للتقسيم.")
-
-    # -------------------------------
-    # Tab 3: كشف الأخطاء
-    # -------------------------------
-    with tab3:
-        st.subheader("🚨 كشف العمليات المشبوهة (Anomaly Detection)")
-        st.write("يقوم الذكاء الاصطناعي بفحص كل عملية لتحديد ما إذا كانت الأرقام غير منطقية.")
-        
-        anomalies = ai_engine.detect_anomalies()
-        
-        if not anomalies.empty:
-            st.error(f"تم اكتشاف {len(anomalies)} عملية شاذة قد تكون أخطاء أو احتيال.")
-            st.dataframe(anomalies[['Date', 'Customer', 'Product', 'Sales', 'Profit']])
-            
-            fig_anom = px.scatter(df, x='Date', y='Sales', color=df['Is_Anomaly'].astype(str), 
-                                title="توزيع العمليات الطبيعية (1) والشاذة (-1)",
-                                color_discrete_map={'1': 'blue', '-1': 'red'})
-            st.plotly_chart(fig_anom, use_container_width=True)
-        else:
-            st.success("✅ لم يكتشف النظام أي أخطاء واضحة.")
-
-    # -------------------------------
-    # Tab 4: الشات بوت (متصل بالبيانات)
-    # -------------------------------
-    with tab4:
-        st.subheader("💬 المساعد التحليلي")
-        
-        # عرض سجل المحادثة
-        for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-
-        # استقبال السؤال
-        if prompt := st.chat_input("اطلب تقريراً، أو اسأل عن المبيعات، الأخطاء، أو أفضل منتج..."):
-            # إضافة سؤال المستخدم
-            st.session_state.chat_history.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            # تحليل السؤال وتجهيز الرد
-            response = ""
-            q = prompt.lower()
-            
-            with st.chat_message("assistant"):
-                with st.spinner("جاري تحليل البيانات..."):
-                    if "تقرير" in q or "شامل" in q:
-                        response = ai_engine.generate_report()
-                    
-                    elif "مبيعات" in q or "ايراد" in q:
-                        response = f"💰 إجمالي المبيعات الحالية هو: **${df['Sales'].sum():,.2f}**"
-                        
-                    elif "خطأ" in q or "مشكلة" in q or "شاذ" in q:
-                        anom_count = len(ai_engine.detect_anomalies())
-                        if anom_count > 0:
-                            response = f"🚨 نعم، وجدت **{anom_count}** عمليات شاذة. راجع تبويب 'كشف الأخطاء' للتفاصيل."
-                        else:
-                            response = "✅ البيانات نظيفة تماماً، لا توجد أخطاء واضحة."
-                            
-                    elif "عميل" in q or "vip" in q:
-                        seg = ai_engine.segment_customers()
-                        best_cust = seg.sort_values('Sales', ascending=False).iloc[0]['Customer']
-                        response = f"👑 أفضل عميل لديك هو **{best_cust}**. يمكنك رؤية التصنيف الكامل في تبويب الذكاء الاصطناعي."
-                        
-                    elif "منتج" in q:
-                        best_prod = df.groupby('Product')['Sales'].sum().idxmax()
-                        response = f"🏆 المنتج الأكثر مبيعاً هو: **{best_prod}**."
-                        
-                    else:
-                        response = "🤖 أنا مساعد ذكي مرتبط ببياناتك. يمكنك سؤالي عن: 'تقرير شامل'، 'المبيعات'، 'الأخطاء'، أو 'أفضل العملاء'."
-                
-                st.markdown(response)
-                st.session_state.chat_history.append({"role": "assistant", "content": response})
-
+# إذا لم يتم رفع الملف
+if st.session_state.df is None or not st.session_state.col_config:
+    st.info("👈 من فضلك، ارفع الملف وحدد الأعمدة من القائمة الجانبية واضغط 'حفظ الإعدادات' لتبدأ المحادثة.")
 else:
-    # رسالة ترحيبية في حالة عدم وجود بيانات
-    st.info("👋 مرحباً! يرجى البدء برفع ملف البيانات من القائمة الجانبية وتحديد الأعمدة، ثم الضغط على 'بدء التحليل الذكي'.")
+    # تهيئة الـ Agent
+    agent = SmartDataAgent(st.session_state.df, st.session_state.col_config)
+
+    # عرض الشات السابق
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            # إذا كان هناك رسم بياني محفوظ (هذا يتطلب منطقاً معقداً للحفظ، سنعرض النصوص فقط في السجل ونعيد توليد الرسم عند الطلب الجديد)
     
-    # عرض توضيحي (Demo Visuals) عشان الصفحة متبقاش فاضية
-    st.markdown("### مميزات النظام:")
-    col_d1, col_d2, col_d3 = st.columns(3)
-    col_d1.success("🧠 **ذكاء اصطناعي (Clustering)** لتصنيف العملاء")
-    col_d2.error("🚨 **كشف احتيال (Isolation Forest)** للأخطاء")
-    col_d3.info("💬 **شات بوت (Chatbot)** يكتب تقارير كاملة")
+    # استقبال السؤال الجديد
+    if user_input := st.chat_input("اسألني عن بياناتك..."):
+        # 1. عرض سؤال المستخدم
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.markdown(user_input)
+
+        # 2. تفكير الذكاء الاصطناعي والرد
+        with st.chat_message("assistant"):
+            with st.spinner("جاري تحليل البيانات..."):
+                response_text, chart_obj = agent.analyze_query(user_input)
+                
+                st.markdown(response_text)
+                if chart_obj:
+                    st.plotly_chart(chart_obj, use_container_width=True)
+                
+                # حفظ الرد (النص فقط) في السجل
+                st.session_state.chat_history.append({"role": "assistant", "content": response_text})
