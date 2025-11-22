@@ -452,4 +452,4 @@ class ComprehensiveAnalysisSystem:
         if status_col in self.df.columns:
             active_customers = len(self.df[self.df[status_col].str.contains('نشط|active', case=False, na=False)])
             results['العملاء النشطين'] = active_customers
-            print(f"\n63. العملاء النشطين:
+            print(f"\n63. العملاء النشطين:")
