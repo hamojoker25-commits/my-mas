@@ -1,302 +1,284 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-import warnings
 
-# إعداد الصفحة
-st.set_page_config(page_title="نظام تحليل البيانات الشامل", layout="wide", page_icon="📊")
+# 1. إعداد الصفحة والواجهة الرأسية
+st.set_page_config(page_title="نظام تحليل المبيعات الشامل", layout="wide")
 
-# تجاهل التحذيرات
-warnings.filterwarnings('ignore')
+# دالة مساعدة للنصوص حسب اللغة
+def get_text(ar_text, en_text, lang):
+    return ar_text if lang == 'العربية' else en_text
 
-class ComprehensiveAnalysisSystem:
-    """نظام تحليل بيانات شامل مع دعم اللغتين العربية والإنجليزية"""
+# الشريط الجانبي للإعدادات
+with st.sidebar:
+    st.header("الإعدادات / Settings")
+    language = st.radio("اللغة / Language", ('العربية', 'English'))
     
-    def __init__(self):
-        self.df = None
-        # قائمة التحليلات
-        self.analysis_groups = {
-            '1': 'تحليل المبيعات الأساسي',
-            '2': 'تحليل المبيعات المتقدم',
-            '3': 'تحليل المخزون الأساسي',
-            '5': 'تحليل الموظفين الأساسي',
-            '7': 'تحليل العملاء الأساسي',
-        }
+    st.divider()
+    
+    # 2. دالة تحميل الملف
+    upload_label = get_text("قم برفع ملف البيانات (CSV او Excel)", "Upload Data File (CSV or Excel)", language)
+    uploaded_file = st.file_uploader(upload_label, type=['csv', 'xlsx'])
+
+# 3. الواجهة الرأسية
+title = get_text("برنامج تحليل المبيعات المتقدم", "Advanced Sales Analysis Program", language)
+st.title(f"📊 {title}")
+
+if uploaded_file is not None:
+    # قراءة الملف
+    try:
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
         
-    def load_data(self, uploaded_file):
-        """تحميل البيانات من ملف Streamlit"""
-        try:
-            if uploaded_file.name.endswith('.csv'):
-                self.df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
-            elif uploaded_file.name.endswith(('.xlsx', '.xls')):
-                self.df = pd.read_excel(uploaded_file)
-            else:
-                st.error("نوع الملف غير مدعوم. استخدم CSV أو Excel")
-                return False
+        st.success(get_text("تم تحميل الملف بنجاح!", "File Uploaded Successfully!", language))
+        with st.expander(get_text("عرض البيانات الخام", "Show Raw Data", language)):
+            st.dataframe(df.head())
             
-            st.success(f"✓ تم تحميل {len(self.df)} صف و {len(self.df.columns)} عمود بنجاح")
-            with st.expander("عرض البيانات الأولية"):
-                st.dataframe(self.df.head())
-            st.info(f"الأعمدة المتاحة: {', '.join(self.df.columns)}")
-            return True
-        except Exception as e:
-            st.error(f"✗ خطأ في تحميل البيانات: {str(e)}")
-            return False
-    
-    def safe_calculate(self, func, default=0):
-        """تنفيذ آمن للعمليات الحسابية"""
-        try:
-            result = func()
-            return result if pd.notna(result) else default
-        except Exception as e:
-            st.warning(f"تحذير حسابي: {str(e)}")
-            return default
-    
-    # ==================== المجموعة 1: تحليل المبيعات الأساسي ====================
-    def group1_basic_sales(self, sales_col='المبيعات', profit_col='الربح', 
-                          product_col='المنتج', region_col='المنطقة',
-                          category_col='الفئة', customer_col='العميل',
-                          date_col='التاريخ'):
-        
-        st.markdown("### 📊 المجموعة 1: تحليل المبيعات الأساسي")
-        st.markdown("---")
-        
-        results = {}
+    except Exception as e:
+        st.error(f"Error: {e}")
+        st.stop()
+
+    # قائمة الأعمدة لتسهيل الاختيار بدلاً من الكتابة اليدوية
+    columns = df.columns.tolist()
+
+    # اختيار المجموعة المراد تشغيلها
+    st.header(get_text("اختر نوع التحليل", "Choose Analysis Type", language))
+    analysis_options = [
+        "1. اساسيات تحليل المبيعات / Basic Sales Analysis",
+        "2. تحليل المبيعات والمنتجات / Product & Sales Analysis",
+        "3. تحليل المناطق والفروع / Regional Analysis",
+        "4. تحليل الوقت والتاريخ / Time & Date Analysis",
+        "5. تحليل الارباح والتكلفة / Profit & Cost Analysis"
+    ]
+    choice = st.selectbox("", analysis_options)
+
+    st.markdown("---")
+
+    # --- الدوال (تم تعديل المدخلات والمخرجات لتناسب Streamlit مع الحفاظ على المعادلات) ---
+
+    if choice == analysis_options[0]:
+        # The_first_group
+        st.subheader(get_text("اساسيات تحليل المبيعات", "Basic Sales Analysis", language))
         
         col1, col2 = st.columns(2)
+        with col1:
+            First_column = st.selectbox(get_text("اختر عمود المبيعات", "Select Sales Column", language), columns, index=0)
+            Second_column = st.selectbox(get_text("اختر عمود المنتج", "Select Product Column", language), columns, index=1 if len(columns)>1 else 0)
+        with col2:
+            Third_column = st.selectbox(get_text("اختر عمود المنطقة", "Select Region Column", language), columns, index=2 if len(columns)>2 else 0)
+            # التعامل مع عمود الكمية (Quantity) لأنه كان ثابت في الكود الأصلي
+            Quantity_col = st.selectbox(get_text("اختر عمود الكمية", "Select Quantity Column", language), columns)
+
+        if st.button(get_text("تشغيل التحليل", "Run Analysis", language)):
+            st.write(get_text("اجمالي المبيعات", "Total Sales", language))
+            st.info(df[First_column].sum())
+
+            st.write(get_text("متوسط قيمة البيع", "Average Sales Value", language))
+            st.info(df[First_column].mean())
+
+            st.write(get_text("اعلي قيمه مبيعا", "Max Sales Value", language))
+            st.info(df[First_column].max())
+
+            st.write(get_text("اقل قيمه مبيعا", "Min Sales Value", language))
+            st.info(df[First_column].min())
+
+            st.write(get_text("عدد عمليات البيع", "Number of Sales Transactions", language))
+            st.info(df.shape[0])
+
+            st.write(get_text("وصف المبيعات احصائيا", "Statistical Description", language))
+            st.write(df[First_column].describe())
+
+            st.write(get_text("عدد المنتجات المختلفة المباعة", "Number of Unique Products", language))
+            st.info(df[Second_column].nunique())
+
+            st.write(get_text("عدد المناطق التي تمت فيها المبيعات", "Number of Regions", language))
+            st.info(df[Third_column].nunique()) # تم تصحيح المتغير بناء على المدخلات
+
+            st.write(get_text("اجمالي الكمية المباعة", "Total Quantity Sold", language))
+            st.info(df[Quantity_col].sum()) # استخدام المتغير المختار
+
+            st.write(get_text("اعلي منطقة تحقيقا للمبيعات", "Top Region by Sales", language))
+            st.write(df.groupby(Third_column)[First_column].sum().sort_values(ascending=False))
+
+    elif choice == analysis_options[1]:
+        # The_second_group
+        st.subheader(get_text("تحليل المبيعات داخل المبيعات", "Sales & Product Analysis", language))
         
-        # 1. إجمالي المبيعات
-        if sales_col in self.df.columns:
-            results['إجمالي المبيعات'] = self.safe_calculate(lambda: self.df[sales_col].sum())
-            col1.metric("إجمالي المبيعات", f"{results['إجمالي المبيعات']:,.2f}")
+        c1, c2, c3 = st.columns(3)
+        First_column = c1.selectbox(get_text("ادخل اسم المنتج", "Product Column", language), columns)
+        Second_column = c2.selectbox(get_text("ادخل اسم المبيعات", "Sales Column", language), columns)
+        Third_column = c3.selectbox(get_text("ادخل اسم الكمية", "Quantity Column", language), columns)
         
-        # 2. إجمالي الأرباح
-        if profit_col in self.df.columns:
-            results['إجمالي الأرباح'] = self.safe_calculate(lambda: self.df[profit_col].sum())
-            col2.metric("إجمالي الأرباح", f"{results['إجمالي الأرباح']:,.2f}")
-        
-        # 3. أفضل 10 منتجات
-        if product_col in self.df.columns and sales_col in self.df.columns:
-            st.subheader("3. أفضل 10 منتجات مبيعاً")
-            top_products = self.df.groupby(product_col)[sales_col].sum().nlargest(10)
-            st.bar_chart(top_products)
-            st.dataframe(top_products, use_container_width=True)
-        
-        # 4. أقل 10 منتجات
-        if product_col in self.df.columns and sales_col in self.df.columns:
-            st.subheader("4. أقل 10 منتجات مبيعاً")
-            bottom_products = self.df.groupby(product_col)[sales_col].sum().nsmallest(10)
-            st.dataframe(bottom_products, use_container_width=True)
-        
-        # 5. المبيعات حسب المنطقة
-        if region_col in self.df.columns and sales_col in self.df.columns:
-            st.subheader("5. المبيعات حسب المنطقة")
-            sales_by_region = self.df.groupby(region_col)[sales_col].sum().sort_values(ascending=False)
-            st.dataframe(sales_by_region, use_container_width=True)
-        
-        # 6. المبيعات حسب الفئة
-        if category_col in self.df.columns and sales_col in self.df.columns:
-            st.subheader("6. المبيعات حسب الفئة")
-            sales_by_category = self.df.groupby(category_col)[sales_col].sum().sort_values(ascending=False)
-            st.dataframe(sales_by_category, use_container_width=True)
-        
-        # 7. المبيعات حسب العميل
-        if customer_col in self.df.columns and sales_col in self.df.columns:
-            st.subheader("7. أفضل 10 عملاء")
-            sales_by_customer = self.df.groupby(customer_col)[sales_col].sum().nlargest(10)
-            st.dataframe(sales_by_customer, use_container_width=True)
-        
-        # 8. المبيعات حسب الشهر
-        if date_col in self.df.columns and sales_col in self.df.columns:
-            st.subheader("8. المبيعات حسب الشهر")
+        c4, c5, c6 = st.columns(3)
+        Fourth_column = c4.selectbox(get_text("ادخل عمود الربح", "Profit Column", language), columns)
+        Fifth_column = c5.selectbox(get_text("ادخل عمود التاريخ", "Date Column", language), columns)
+        Sixth_column = c6.selectbox(get_text("ادخل عمود الفئة", "Category Column", language), columns)
+
+        if st.button(get_text("تشغيل التحليل", "Run Analysis", language)):
+            # تحويل التاريخ لضمان عمل الكود
             try:
-                self.df[date_col] = pd.to_datetime(self.df[date_col], errors='coerce')
-                sales_by_month = self.df.groupby(self.df[date_col].dt.to_period('M').astype(str))[sales_col].sum()
-                st.line_chart(sales_by_month)
-            except Exception as e:
-                st.error(f"خطأ في معالجة التاريخ: {e}")
-        
-        return results
+                df[Fifth_column] = pd.to_datetime(df[Fifth_column])
+            except:
+                st.warning("تأكد أن عمود التاريخ بالتنسيق الصحيح")
 
-    # ==================== المجموعة 2: تحليل المبيعات المتقدم ====================
-    def group2_advanced_sales(self, sales_col='المبيعات', profit_col='الربح',
-                             product_col='المنتج', category_col='الفئة',
-                             price_col='السعر', channel_col='القناة',
-                             stock_col='المخزون', promo_col='ترويج',
-                             date_col='التاريخ'):
+            st.write("اعلي منتجات مبيعا")
+            st.dataframe(df.groupby(First_column)[Second_column].sum().sort_values(ascending=False))
+
+            st.write("اقل منتج مبيعا")
+            st.dataframe(df.groupby(First_column)[Second_column].sum().sort_values().head(10))
+
+            st.write("اكثر منتج مبيعا من حيث الكمية")
+            st.dataframe(df.groupby(First_column)[Third_column].sum().sort_values(ascending=False))
+
+            st.write("اقل منتج مبيعا من حيث الكمية")
+            st.dataframe(df.groupby(First_column)[Third_column].sum().sort_values().head(10))
+
+            st.write("اعلي منتجات ربحا")
+            st.dataframe(df.groupby(First_column)[Fourth_column].sum().sort_values(ascending=False))
+
+            st.write("اقل منتج ربحا")
+            st.dataframe(df.groupby(First_column)[Fourth_column].sum().sort_values().head(10))
+
+            st.write("المنتجات الاعلي في هامش الربح")
+            st.dataframe(df.groupby(First_column)[Fourth_column].sum() / df.groupby(First_column)[Second_column].sum())
+
+            st.write("تحليل المنتجات من حيث الفئة")
+            st.dataframe(df.groupby(Sixth_column)[Second_column].sum().sort_values(ascending=False))
+
+            st.write("افضل 10 منتجات في كل فئة")
+            st.dataframe(df.groupby([Sixth_column,First_column])[Second_column].sum().sort_values(ascending=False).groupby(level=0).head(10))
+
+            st.write("المنتجات الموسمية حسب الشهر")
+            if pd.api.types.is_datetime64_any_dtype(df[Fifth_column]):
+                st.dataframe(df.groupby(df[Fifth_column].dt.month)[First_column].value_counts())
+            else:
+                st.error("يرجى التأكد من تحويل عمود التاريخ لصيغة Date")
+
+    elif choice == analysis_options[2]:
+        # The_third_group
+        st.subheader(get_text("تحليل المناطق والفروع", "Regional Analysis", language))
         
-        st.markdown("### 📈 المجموعة 2: تحليل المبيعات المتقدم")
-        st.markdown("---")
+        First_column = st.selectbox(get_text("ادخل عمود المنطقة", "Region Column", language), columns)
+        Second_column = st.selectbox(get_text("ادخل عمود المبيعات", "Sales Column", language), columns)
+        Third_column = st.selectbox(get_text("ادخل عمود الربح", "Profit Column", language), columns)
+        Fourth_column = st.selectbox(get_text("ادخل عمود الكمية", "Quantity Column", language), columns)
+        # Fifth_column ignored in code logic below but requested in input, map to Country if exists
+        Fifth_column = st.selectbox(get_text("ادخل اسم الدولة/المحافظة (للتحليل حسب الدولة)", "Country Column", language), columns) 
+        Sixth_column = st.selectbox(get_text("ادخل اسم المنتج", "Product Column", language), columns)
+        Column_VII = st.selectbox(get_text("ادخل عمود السعر", "Price Column", language), columns)
+
+        if st.button(get_text("تشغيل التحليل", "Run Analysis", language)):
+            st.write("تحليل المبيعات حسب المنطقة")
+            st.dataframe(df.groupby(First_column)[Second_column].sum().sort_values(ascending=False))
+
+            st.write("تحليل الارباح حسب المنطقة")
+            st.dataframe(df.groupby(First_column)[Third_column].sum().sort_values(ascending=False))
+            
+            st.write("اجمالي الكمية المباعة حسب المنطقة")
+            st.dataframe(df.groupby(First_column)[Fourth_column].sum().sort_values(ascending=False))
+            
+            st.write("متوسط قيمة البيع في كل منطقة")
+            st.dataframe(df.groupby(First_column)[Second_column].mean().sort_values(ascending=False))
+            
+            st.write("عدد العمليات في كل منطقة")
+            st.write(df[First_column].value_counts())
+            
+            st.write("اعلي منطقة نمو في المبيعات (مقارنة تسلسلية)")
+            st.dataframe(df.groupby(First_column)[Second_column].sum().diff())
+            
+            st.write("اسوأ منطقة من حيث المبيعات")
+            st.dataframe(df.groupby(First_column)[Second_column].sum().sort_values().head(1))
+            
+            st.write("تحليل المبيعات حسب الدولة")
+            st.dataframe(df.groupby(Fifth_column)[Second_column].sum().sort_values(ascending=False))
+            
+            st.write("تحليل اختلاف الاسعار حسب المنطقة")
+            st.dataframe(df.groupby(First_column)[Column_VII].mean())
+            
+            st.write("تحليل المنتجات الاكثر مبيعا داخل كل منطقة")
+            st.dataframe(df.groupby([First_column,Sixth_column])[Second_column].sum().sort_values(ascending=False))
+
+    elif choice == analysis_options[3]:
+        # Fourth_group
+        st.subheader(get_text("تحليل الوقت والتاريخ", "Time Analysis", language))
         
-        results = {}
-        
-        # 11. معدل الربح لكل منتج
-        if product_col in self.df.columns and profit_col in self.df.columns:
-            st.subheader("11. معدل الربح لكل منتج (أعلى 10)")
-            profit_per_product = self.df.groupby(product_col)[profit_col].mean().nlargest(10)
-            st.dataframe(profit_per_product, use_container_width=True)
-        
-        # 13. متوسط سعر البيع
-        if price_col in self.df.columns:
-            avg_price = self.df[price_col].mean()
-            st.metric("13. متوسط سعر البيع", f"{avg_price:,.2f}")
-        
-        # 14. هامش الربح
-        if sales_col in self.df.columns and profit_col in self.df.columns:
+        First_column = st.selectbox("ادخل عمود التاريخ / Date Column", columns)
+        Second_column = st.selectbox("ادخل عمود المبيعات / Sales Column", columns)
+        # Inputs for frequency
+        Third_column = st.selectbox("التكرار الزمني (M للشهري)", ['M', 'Q', 'Y'], index=0)
+        # Fourth column was meant for Year column in pivot, let's ask for a categorical column to pivot against
+        Fourth_column = st.selectbox("عمود للمقارنة (مثل الفئة أو المنطقة) / Pivot Column", columns)
+
+        if st.button(get_text("تشغيل التحليل", "Run Analysis", language)):
+            st.write("تحويل التاريخ لصيغة Datetime")
+            df[First_column] = pd.to_datetime(df[First_column])
+            st.success("تم التحويل / Converted")
+
+            st.write("تحليل المبيعات حسب اليوم")
+            st.line_chart(df.groupby(df[First_column].dt.date)[Second_column].sum())
+
+            st.write("تحليل المبيعات حسب الفترة المختارة")
+            st.write(df.groupby(df[First_column].dt.to_period(Third_column))[Second_column].sum())
+
+            st.write("تحليل المبيعات حسب السنة")
+            st.bar_chart(df.groupby(df[First_column].dt.year)[Second_column].sum())
+
+            st.write("تحديد اشهر الذروة")
+            st.write(df.groupby(df[First_column].dt.month)[Second_column].sum().sort_values(ascending=False).head(3))
+
+            st.write("تحديد اضعف الشهور مبيعات")
+            st.write(df.groupby(df[First_column].dt.month)[Second_column].sum().sort_values().head(3))
+
+            st.write("تحليل المبيعات حسب اليوم داخل الاسبوع")
+            st.bar_chart(df.groupby(df[First_column].dt.day_name())[Second_column].sum())
+
+            st.write("المبيعات اليومية المتراكمة")
+            st.area_chart(df.groupby(df[First_column].dt.date)[Second_column].sum().cumsum())
+
+            st.write("المتوسط اليومي للمبيعات")
+            st.write(df.groupby(df[First_column].dt.date)[Second_column].mean())
+
+            st.write("مقارنة المبيعات (Pivot Table)")
             try:
-                self.df['هامش_الربح'] = (self.df[profit_col] / self.df[sales_col] * 100)
-                st.subheader("14. متوسط هامش الربح لكل منتج (أعلى 10)")
-                margin_by_product = self.df.groupby(product_col)['هامش_الربح'].mean().nlargest(10)
-                st.dataframe(margin_by_product, use_container_width=True)
+                pivot = df.pivot_table(values=Second_column, index=df[First_column].dt.month, columns=Fourth_column, aggfunc='sum')
+                st.dataframe(pivot)
             except Exception as e:
-                st.warning("تعذر حساب هامش الربح")
+                st.error(f"لا يمكن إنشاء الجدول المحوري: {e}")
 
-        # 17. المبيعات الموسمية
-        if date_col in self.df.columns and sales_col in self.df.columns:
-            st.subheader("17. المبيعات الموسمية (حسب الشهر)")
-            self.df[date_col] = pd.to_datetime(self.df[date_col], errors='coerce')
-            seasonal_sales = self.df.groupby(self.df[date_col].dt.month)[sales_col].sum()
-            st.bar_chart(seasonal_sales)
+    elif choice == analysis_options[4]:
+        # Fifth_group
+        st.subheader(get_text("تحليل الارباح والتكلفة", "Profit & Cost Analysis", language))
+        
+        First_column = st.selectbox("ادخل عمود الربح", columns)
+        Second_column = st.selectbox("ادخل عمود التكلفة", columns)
+        Third_column = st.selectbox("ادخل عمود المبيعات", columns)
+        Fourth_column = st.selectbox("ادخل عمود المنتج", columns)
+        Fifth_column = st.selectbox("ادخل عمود المنطقة", columns)
 
-        return results
+        if st.button(get_text("تشغيل التحليل", "Run Analysis", language)):
+            st.metric("اجمالي الارباح", f"{df[First_column].sum():,.2f}")
+            st.metric("متوسط الربح لكل عملية", f"{df[First_column].mean():,.2f}")
+            st.metric("اعلي ربح في عملية واحده", f"{df[First_column].max():,.2f}")
+            st.metric("اقل ربح في عملية واحدة", f"{df[First_column].min():,.2f}")
+            st.metric("اجمالي التكلفة", f"{df[Second_column].sum():,.2f}")
 
-    # ==================== المجموعة 3: تحليل المخزون الأساسي ====================
-    def group3_basic_inventory(self, stock_col='المخزون', product_col='المنتج',
-                               category_col='الفئة', warehouse_col='المستودع',
-                               sales_col='المبيعات'):
-        
-        st.markdown("### 📦 المجموعة 3: تحليل المخزون الأساسي")
-        st.markdown("---")
-        
-        results = {}
-        
-        # 21. إجمالي المخزون
-        if stock_col in self.df.columns:
-            total_stock = self.df[stock_col].sum()
-            st.metric("21. إجمالي المخزون", f"{total_stock:,.0f}")
-        
-        # 22. المخزون حسب المنتج
-        if product_col in self.df.columns and stock_col in self.df.columns:
-            st.subheader("22. أعلى 10 منتجات في المخزون")
-            stock_by_product = self.df.groupby(product_col)[stock_col].sum().nlargest(10)
-            st.dataframe(stock_by_product, use_container_width=True)
+            st.write("هامش الربح (تمت إضافته للجدول)")
+            df['Profit_Margin'] = df[First_column] / df[Third_column]
+            st.dataframe(df[['Profit_Margin']].head())
 
-        # 25. المنتجات منخفضة المخزون
-        if stock_col in self.df.columns and product_col in self.df.columns:
-            st.subheader("25. المنتجات منخفضة المخزون (أقل 10)")
-            low_stock = self.df.nsmallest(10, stock_col)[[product_col, stock_col]]
-            st.dataframe(low_stock, use_container_width=True)
+            st.write("تحليل الربح حسب المنتج")
+            st.bar_chart(df.groupby(Fourth_column)[First_column].sum().sort_values(ascending=False).head(10))
 
-        return results
-    
-    # ==================== المجموعة 5: تحليل الموظفين الأساسي ====================
-    def group5_basic_employees(self, dept_col='القسم', role_col='الدور',
-                              salary_col='الراتب', date_col='تاريخ_التوظيف',
-                              status_col='الحالة', attendance_col='الحضور'):
-        
-        st.markdown("### 👥 المجموعة 5: تحليل الموظفين الأساسي")
-        st.markdown("---")
-        
-        results = {}
-        
-        # 41. عدد الموظفين حسب القسم
-        if dept_col in self.df.columns:
-            st.subheader("41. عدد الموظفين حسب القسم")
-            emp_by_dept = self.df[dept_col].value_counts()
-            st.dataframe(emp_by_dept, use_container_width=True)
-        
-        # 43. متوسط الراتب حسب القسم
-        if dept_col in self.df.columns and salary_col in self.df.columns:
-            st.subheader("43. متوسط الراتب حسب القسم")
-            avg_salary_dept = self.df.groupby(dept_col)[salary_col].mean()
-            st.dataframe(avg_salary_dept, use_container_width=True)
+            st.write("تحليل الربح حسب المنطقة")
+            st.bar_chart(df.groupby(Fifth_column)[First_column].sum().sort_values(ascending=False))
 
-        return results
+            st.write("حساب نسبة الربح المئوية لكل منتج")
+            profit_pct = (df.groupby(Fourth_column)[First_column].sum() / df.groupby(Fourth_column)[Third_column].sum()) * 100
+            st.dataframe(profit_pct.sort_values(ascending=False))
 
-    # ==================== المجموعة 7: تحليل العملاء الأساسي ====================
-    def group7_basic_customers(self, customer_col='العميل', date_col='التاريخ',
-                              status_col='الحالة'):
-        
-        st.markdown("### 🤝 المجموعة 7: تحليل العملاء الأساسي")
-        st.markdown("---")
-        
-        results = {}
-        
-        # 61. عدد العملاء الكلي
-        if customer_col in self.df.columns:
-            total_customers = self.df[customer_col].nunique()
-            st.metric("61. عدد العملاء الكلي", f"{total_customers:,}")
-        
-        # 62. العملاء الجدد
-        if customer_col in self.df.columns and date_col in self.df.columns:
-            self.df[date_col] = pd.to_datetime(self.df[date_col], errors='coerce')
-            new_customers = self.df[self.df[date_col] >= (datetime.now() - timedelta(days=30))][customer_col].nunique()
-            st.metric("62. العملاء الجدد (آخر 30 يوم)", f"{new_customers:,}")
-        
-        # 63. العملاء النشطين (هنا كان الخطأ وتم إصلاحه)
-        if status_col in self.df.columns:
-            active_customers = len(self.df[self.df[status_col].str.contains('نشط|active', case=False, na=False)])
-            st.metric("63. العملاء النشطين", f"{active_customers}")
-        
-        return results
+            st.write("تحديد المنتجات الخاسرة")
+            st.dataframe(df[df[First_column] < 0])
 
-# ==============================================================================
-# واجهة تشغيل التطبيق (Streamlit Execution Logic)
-# ==============================================================================
-
-def main():
-    st.title("🚀 نظام MAS لتحليل البيانات")
-    st.write("قم برفع ملف البيانات (CSV أو Excel) وسيقوم النظام بالتحليل التلقائي.")
-    
-    # 1. رفع الملف
-    uploaded_file = st.file_uploader("اختر ملف البيانات", type=['csv', 'xlsx', 'xls'])
-    
-    if uploaded_file is not None:
-        # إنشاء نسخة من النظام
-        system = ComprehensiveAnalysisSystem()
-        
-        # تحميل البيانات
-        if system.load_data(uploaded_file):
-            
-            # 2. إعدادات الأعمدة (اختياري لتعيين الأسماء الصحيحة)
-            st.sidebar.header("🔧 إعدادات الأعمدة")
-            st.sidebar.info("تأكد أن أسماء الأعمدة في ملفك تتطابق مع الافتراضية أو اخترها من هنا:")
-            
-            cols = system.df.columns.tolist()
-            
-            # قوائم اختيار الأعمدة لربطها بالكود
-            c_sales = st.sidebar.selectbox("عمود المبيعات", cols, index=cols.index('المبيعات') if 'المبيعات' in cols else 0)
-            c_date = st.sidebar.selectbox("عمود التاريخ", cols, index=cols.index('التاريخ') if 'التاريخ' in cols else 0)
-            c_product = st.sidebar.selectbox("عمود المنتج", cols, index=cols.index('المنتج') if 'المنتج' in cols else 0)
-            c_profit = st.sidebar.selectbox("عمود الربح", cols, index=cols.index('الربح') if 'الربح' in cols else 0)
-            
-            # 3. اختيار التحليل
-            st.header("🔍 اختر نوع التحليل")
-            analysis_type = st.selectbox(
-                "القائمة",
-                list(system.analysis_groups.values())
-            )
-            
-            run_btn = st.button("بدء التحليل")
-            
-            if run_btn:
-                if analysis_type == 'تحليل المبيعات الأساسي':
-                    system.group1_basic_sales(sales_col=c_sales, date_col=c_date, product_col=c_product, profit_col=c_profit)
-                
-                elif analysis_type == 'تحليل المبيعات المتقدم':
-                    system.group2_advanced_sales(sales_col=c_sales, date_col=c_date, product_col=c_product, profit_col=c_profit)
-                
-                elif analysis_type == 'تحليل المخزون الأساسي':
-                    # يمكنك إضافة Selectbox لعمود المخزون إذا أردت
-                    c_stock = 'المخزون' if 'المخزون' in cols else cols[0]
-                    system.group3_basic_inventory(stock_col=c_stock, product_col=c_product, sales_col=c_sales)
-                    
-                elif analysis_type == 'تحليل الموظفين الأساسي':
-                    system.group5_basic_employees()
-                    
-                elif analysis_type == 'تحليل العملاء الأساسي':
-                    system.group7_basic_customers(date_col=c_date, sales_col=c_sales)
-
-if __name__ == "__main__":
-    main()
+else:
+    st.info(get_text("يرجى رفع ملف بيانات للبدء", "Please upload a data file to start", language))
