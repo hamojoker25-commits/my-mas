@@ -1,180 +1,167 @@
-import pygame
-import sys
-import random
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+from datetime import datetime
+import time
 
-# --- 1. الإعدادات الأساسية ---
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
-TITLE = "Level Deceiver"
-FPS = 60
+# --- 1. إعدادات الصفحة والتصميم ---
+st.set_page_config(page_title="مدير المهام الاحترافي", page_icon="✅", layout="wide")
 
-# الألوان
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-GROUND_COLOR = (100, 150, 50) # لون الأرضية الأخضر
+# تخصيص CSS بسيط لتحسين المظهر
+st.markdown("""
+<style>
+    .stProgress > div > div > div > div {
+        background-color: #4CAF50;
+    }
+    .task-card {
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+        border: 1px solid #eee;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# --- 2. إعدادات اللاعب (Sprite) ---
-PLAYER_WIDTH = 20
-PLAYER_HEIGHT = 40
-JUMP_VELOCITY = -15
-GRAVITY = 0.8
-WALK_SPEED = 5
+# --- 2. إدارة الحالة (Session State) ---
+# لضمان حفظ المهام عند تحديث الصفحة
+if 'tasks' not in st.session_state:
+    st.session_state['tasks'] = []
 
-class Player(pygame.sprite.Sprite):
-    def __init__(self, x, y):
-        super().__init__()
-        self.image = pygame.Surface([PLAYER_WIDTH, PLAYER_HEIGHT])
-        self.image.fill(BLACK) # لون اللاعب أسود (مثل الفيديو)
-        self.rect = self.image.get_rect()
-        self.rect.x = x
-        self.rect.y = y
-        
-        self.velocity_y = 0
-        self.on_ground = True
+# --- 3. الوظائف المساعدة ---
+def add_task(name, time_obj, category, priority):
+    st.session_state['tasks'].append({
+        "Task": name,
+        "Time": time_obj,
+        "Category": category,
+        "Priority": priority,
+        "Completed": False,
+        "ID": time.time() # معرف فريد
+    })
 
-    def update(self, platforms):
-        # تطبيق الجاذبية
-        self.velocity_y += GRAVITY
-        
-        # الحركة الأفقية (المحاكاة للتنقل)
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_LEFT]:
-            self.rect.x -= WALK_SPEED
-        if keys[pygame.K_RIGHT]:
-            self.rect.x += WALK_SPEED
+def delete_task(index):
+    del st.session_state['tasks'][index]
 
-        # تطبيق الحركة العمودية
-        self.rect.y += self.velocity_y
-        
-        self.on_ground = False
-        # اكتشاف التصادمات (للقفز)
-        for platform in platforms:
-            if self.rect.colliderect(platform.rect):
-                if self.velocity_y > 0 and self.rect.bottom <= platform.rect.bottom:
-                    # الهبوط على المنصة
-                    self.rect.bottom = platform.rect.top
-                    self.velocity_y = 0
-                    self.on_ground = True
-                elif self.velocity_y < 0 and self.rect.top >= platform.rect.top:
-                    # ضرب الرأس في منصة من الأسفل
-                    self.rect.top = platform.rect.bottom
-                    self.velocity_y = 0
+def toggle_complete(index):
+    st.session_state['tasks'][index]['Completed'] = not st.session_state['tasks'][index]['Completed']
 
-    def jump(self):
-        if self.on_ground:
-            self.velocity_y = JUMP_VELOCITY
-            self.on_ground = False
-
-# --- 3. إعدادات المنصة والعقبات ---
-
-class Platform(pygame.sprite.Sprite):
-    def __init__(self, x, y, w, h, color=GROUND_COLOR):
-        super().__init__()
-        self.image = pygame.Surface([w, h])
-        self.image.fill(color)
-        self.rect = self.image.get_rect()
-        self.rect.x = x
-        self.rect.y = y
-
-# --- 4. منطق المستوى الخادع ---
-
-def setup_level(level_id):
-    # مسح جميع المجموعات
-    platforms = pygame.sprite.Group()
-    hazards = pygame.sprite.Group()
+# --- 4. الشريط الجانبي (إضافة المهام) ---
+with st.sidebar:
+    st.header("📝 إضافة مهمة جديدة")
     
-    # منصة الأرض الرئيسية
-    platforms.add(Platform(0, SCREEN_HEIGHT - 50, SCREEN_WIDTH, 50, GROUND_COLOR))
-
-    if level_id == 1:
-        # المستوى 1: سهل في البداية
-        platforms.add(Platform(150, 450, 100, 20))
-        platforms.add(Platform(400, 350, 150, 20))
-        # إضافة منطقة خداع: المنصة الأخيرة تختفي!
-        platforms.add(Platform(650, 250, 80, 20, (200, 200, 200))) # لون مختلف للتضليل
+    with st.form("add_task_form", clear_on_submit=True):
+        task_name = st.text_input("اسم المهمة")
+        task_time = st.time_input("وقت المهمة", datetime.now())
+        task_cat = st.selectbox("التصنيف", ["عمل", "شخصي", "صحة", "تطوير", "أخرى"])
+        task_prio = st.select_slider("الأولوية", options=["منخفضة", "متوسطة", "عالية"])
         
-        # مؤشر الخروج
-        exit_point = Platform(750, SCREEN_HEIGHT - 90, 40, 40, (180, 180, 180)) 
-        platforms.add(exit_point)
+        submitted = st.form_submit_button("إضافة للمحفظة")
         
-    elif level_id == 2:
-        # المستوى 2: تبدأ الأرضية بالاختفاء!
-        # هذه المنصة ستختفي بعد 5 ثواني
-        platforms.add(Platform(50, SCREEN_HEIGHT - 150, 700, 50, (150, 50, 50)))
-        # يمكن إضافة منطق داخل حلقة اللعبة لمسح المنصة بعد وقت معين
+        if submitted and task_name:
+            add_task(task_name, task_time, task_cat, task_prio)
+            st.success("تمت الإضافة بنجاح!")
+        elif submitted and not task_name:
+            st.warning("الرجاء كتابة اسم المهمة.")
+
+    st.markdown("---")
+    st.caption("برمجة بواسطة المساعد الذكي © 2024")
+
+# --- 5. الواجهة الرئيسية ---
+st.title("✅ لوحة التحكم اليومية")
+st.markdown(f"**تاريخ اليوم:** {datetime.now().strftime('%Y-%m-%d')}")
+
+# حساب نسبة الإنجاز
+total_tasks = len(st.session_state['tasks'])
+completed_tasks = len([t for t in st.session_state['tasks'] if t['Completed']])
+progress = (completed_tasks / total_tasks) if total_tasks > 0 else 0
+
+# عرض شريط التقدم
+st.metric("نسبة الإنجاز اليومي", f"{int(progress * 100)}%")
+st.progress(progress)
+
+st.markdown("---")
+
+# تقسيم الشاشة إلى تبويبات (Tabs)
+tab1, tab2, tab3 = st.tabs(["📋 قائمة المهام", "📅 الجدول الزمني", "📊 الإحصائيات"])
+
+# --- التبويب 1: قائمة المهام (List View) ---
+with tab1:
+    if not st.session_state['tasks']:
+        st.info("لا توجد مهام اليوم. ابدأ بإضافة مهام من القائمة الجانبية!")
+    else:
+        # فرز المهام بحيث تظهر غير المكتملة أولاً
+        sorted_tasks = sorted(st.session_state['tasks'], key=lambda x: x['Completed'])
         
-        # عقبة مفاجئة (الأشواك)
-        hazards.add(Platform(300, SCREEN_HEIGHT - 50, 100, 10, (255, 0, 0))) # لون أحمر
+        for i, task in enumerate(st.session_state['tasks']):
+            # تصميم كارت لكل مهمة
+            col1, col2, col3, col4, col5 = st.columns([0.5, 4, 2, 1.5, 1])
+            
+            with col1:
+                # Checkbox للإنهاء
+                is_checked = st.checkbox("", value=task['Completed'], key=f"check_{task['ID']}", on_change=toggle_complete, args=(i,))
+            
+            with col2:
+                # تطبيق الشطب (Strikethrough)
+                if task['Completed']:
+                    st.markdown(f"~~**{task['Task']}**~~")
+                else:
+                    st.markdown(f"**{task['Task']}**")
+            
+            with col3:
+                st.caption(f"🕒 {task['Time'].strftime('%I:%M %p')}")
+                
+            with col4:
+                # ألوان للأولوية
+                color = "red" if task['Priority'] == "عالية" else "orange" if task['Priority'] == "متوسطة" else "green"
+                st.markdown(f":{color}[{task['Priority']}]")
+            
+            with col5:
+                if st.button("🗑️", key=f"del_{task['ID']}"):
+                    delete_task(i)
+                    st.rerun()
+            
+            st.markdown("<hr style='margin: 5px 0; opacity: 0.2'>", unsafe_allow_html=True)
+
+# --- التبويب 2: الجدول الزمني (Timeline) ---
+with tab2:
+    if st.session_state['tasks']:
+        # تحويل البيانات لـ DataFrame
+        df = pd.DataFrame(st.session_state['tasks'])
+        df['Time'] = df['Time'].apply(lambda x: x.strftime('%H:%M'))
+        df['Status'] = df['Completed'].apply(lambda x: 'منجزة' if x else 'قيد الانتظار')
         
-    return platforms, hazards, exit_point
-
-# --- 5. حلقة اللعبة الرئيسية ---
-
-def game_loop():
-    pygame.init()
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption(TITLE)
-    clock = pygame.time.Clock()
-    
-    current_level = 1
-    
-    # إعداد المستويات
-    platforms, hazards, exit_point = setup_level(current_level)
-    player = Player(50, SCREEN_HEIGHT - 100)
-    all_sprites = pygame.sprite.Group(player, platforms, hazards)
-    
-    running = True
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE or event.key == pygame.K_UP:
-                    player.jump()
-
-        # --- تحديث المنطق ---
-        player.update(platforms)
+        # ترتيب الجدول حسب الوقت
+        df_sorted = df.sort_values(by="Time")
         
-        # 1. اكتشاف الخروج (انتهاء المستوى)
-        if player.rect.colliderect(exit_point.rect):
-            # تحقق خادع: يجب أن نمرر اللاعب إلى المستوى التالي فقط في المستويات الفردية
-            if current_level % 2 != 0:
-                 current_level += 1
-                 if current_level <= 2:
-                    # إعادة تحميل المستوى
-                    platforms, hazards, exit_point = setup_level(current_level)
-                    player = Player(50, SCREEN_HEIGHT - 100)
-                    all_sprites = pygame.sprite.Group(player, platforms, hazards)
-                 else:
-                     print("مبروك! لقد وصلت لنهاية الديمو!")
-                     running = False
-            else:
-                 # الخدعة: إذا كان المستوى زوجي، المخرج يقتلك!
-                 print("خدعة! هذا المخرج يقتل! الموت!")
-                 current_level = 1
-                 platforms, hazards, exit_point = setup_level(current_level)
-                 player = Player(50, SCREEN_HEIGHT - 100)
-                 all_sprites = pygame.sprite.Group(player, platforms, hazards)
+        st.dataframe(
+            df_sorted[['Time', 'Task', 'Category', 'Priority', 'Status']],
+            use_container_width=True,
+            column_config={
+                "Time": "التوقيت",
+                "Task": "المهمة",
+                "Category": "التصنيف",
+                "Priority": "الأولوية",
+                "Status": "الحالة"
+            }
+        )
+    else:
+        st.info("أضف مهام لعرض الجدول الزمني.")
 
+# --- التبويب 3: الإحصائيات (Analytics) ---
+with tab3:
+    if st.session_state['tasks']:
+        col_a, col_b = st.columns(2)
+        
+        df_stats = pd.DataFrame(st.session_state['tasks'])
+        
+        with col_a:
+            st.subheader("المهام حسب التصنيف")
+            fig_cat = px.pie(df_stats, names='Category', title='توزيع المهام حسب النوع')
+            st.plotly_chart(fig_cat, use_container_width=True)
+            
+        with col_b:
+            st.subheader("المهام حسب الأولوية")
+            fig_prio = px.bar(df_stats, x='Priority', color='Priority', title='عدد المهام لكل أولوية')
+            st.plotly_chart(fig_prio, use_container_width=True)
+    else:
+        st.info("لا توجد بيانات كافية للتحليل.")
 
-        # 2. اكتشاف العقبات والموت
-        if pygame.sprite.spritecollideany(player, hazards) or player.rect.top > SCREEN_HEIGHT:
-            print("موت! إعادة المحاولة!")
-            # إعادة ضبط المستوى الحالي
-            platforms, hazards, exit_point = setup_level(current_level)
-            player = Player(50, SCREEN_HEIGHT - 100)
-            all_sprites = pygame.sprite.Group(player, platforms, hazards)
-
-        # --- الرسم ---
-        screen.fill(WHITE) # خلفية بيضاء أو بلون متغير
-        all_sprites.draw(screen)
-
-        # تحديث الشاشة
-        pygame.display.flip()
-        clock.tick(FPS)
-
-    pygame.quit()
-    sys.exit()
-
-if __name__ == "__main__":
-    game_loop()
